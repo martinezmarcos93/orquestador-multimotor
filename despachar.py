@@ -97,6 +97,11 @@ def git(cwd: Path, *args: str, check: bool = True) -> str:
     return r.stdout.strip()
 
 
+def listar_sucios(wt: Path) -> list[str]:
+    """Archivos sin commitear, uno por uno (-uall: sin esto git colapsa carpetas nuevas a 'docs/')."""
+    return [l[3:] for l in git(wt, "status", "--porcelain", "-uall").splitlines()]
+
+
 def correr_oraculo(comandos: list[str], cwd: Path, repo: Path, log: Path) -> bool:
     ok = True
     with log.open("a", encoding="utf-8") as f:
@@ -196,7 +201,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False) -> dict:
     base_ref = sha_base_main
     commits = int(git(wt, "rev-list", "--count", f"{base_ref}..HEAD") or 0)
     cambiados = set(git(wt, "diff", "--name-only", f"{base_ref}..HEAD").splitlines())
-    sucios = [l[3:] for l in git(wt, "status", "--porcelain").splitlines()]
+    sucios = listar_sucios(wt)
     cambiados |= set(sucios)
     diff = git(wt, "diff", f"{base_ref}..HEAD", check=False)
     añadidas = "\n".join(l for l in diff.splitlines() if l.startswith("+") and not l.startswith("+++"))

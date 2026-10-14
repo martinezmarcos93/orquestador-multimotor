@@ -66,6 +66,16 @@ class TestEntornos(unittest.TestCase):
             self.assertEqual(d.git(wt, "status", "--porcelain"), "")
             self.assertEqual(d.enlazar_entornos(repo, wt), [])
 
+    def test_sucios_lista_archivos_no_carpetas(self):
+        import subprocess, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+            (repo / "docs" / "opencode").mkdir(parents=True)
+            (repo / "docs" / "opencode" / "A.md").write_text("x", encoding="utf-8")
+            self.assertEqual(d.listar_sucios(repo), ["docs/opencode/A.md"])
+            self.assertEqual(d.fuera_de_alcance(d.listar_sucios(repo), ["tests/**"]), [])
+
     def test_mensaje_reemplaza_ruta_del_repo(self):
         m = d.mensaje_para_opencode(ENCARGO + "\nusar /tmp/demo/.venv/bin/python", Path("/tmp/wt"), Path("/tmp/demo"))
         self.assertIn("/tmp/wt/.venv/bin/python", m)
