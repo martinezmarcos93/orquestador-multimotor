@@ -1,6 +1,6 @@
 # Orquestador OpenCode — Claude dirige, los trabajadores obedecen
 
-Sistema de orquestación en el que Claude Code actúa como **director** y modelos gratuitos de OpenCode como **trabajadores**. Claude escribe un encargo acotado, el despachador lo ejecuta en un worktree aislado, verifica el resultado con un oráculo y Claude revisa y decide: integrar, dar una orden nueva con feedback o tomarlo él.
+Sistema de orquestación en el que Claude Code actúa como **director** y modelos gratuitos de OpenCode como **trabajadores**. Claude escribe un encargo acotado, el despachador lo ejecuta en un worktree de trabajo (no es un sandbox de seguridad por sí mismo), verifica el resultado con un oráculo y Claude revisa y decide: integrar, dar una orden nueva con feedback o tomarlo él.
 
 > **Principio fundamental:** Claude no controla terminales, coordina trabajo. La comunicación es por archivos y el veredicto sale de un oráculo ejecutable, no del "listo" de quien trabajó.
 
@@ -14,7 +14,10 @@ Sistema de orquestación en el que Claude Code actúa como **director** y modelo
 git clone https://github.com/martinezmarcos93/orquestador-opencode.git
 cd orquestador-opencode
 ./instalar.sh          # copia los agentes a ~/.config/opencode/agents y la skill a ~/.claude/skills
+bash verificar.sh       # compilación, ayuda CLI y suite unitaria; no llama modelos ni requiere red
+bash verificar.sh --installed  # además detecta agentes/skill instalados ausentes o desactualizados
 python3 -m unittest discover -s tests
+python3 despachar.py ENCARGO.md --validar  # valida sin crear worktree ni ejecutar el oráculo/modelo
 ```
 
 No tiene dependencias externas: solo la librería estándar.
@@ -39,6 +42,8 @@ No tiene dependencias externas: solo la librería estándar.
    permitidos = ["tests/**"]
    oraculo = [".venv/bin/python -m pytest -q"]
    timeout_min = 20
+   # Solo si el oráculo necesita usar el entorno del repo original (reduce aislamiento):
+   # permitir_entornos_compartidos = true
    revisor = true                 # opcional: revisión de solo lectura tras un "pasa"
    exige_baseline_verde = false   # true para higiene: sin baseline verde no se lanza nada
 
@@ -54,10 +59,14 @@ No tiene dependencias externas: solo la librería estándar.
    ```bash
    python3 despachar.py ENCARGO.md                  # un encargo
    python3 cola.py E1.md E2.md E3.md --max 2        # varios en paralelo (máx. 3), sin pisarse
-   python3 despachar.py ENCARGO.md --dry-run        # prepara el worktree sin gastar cuota
+   python3 despachar.py ENCARGO.md --validar        # valida configuración, repo, base, agentes y oráculo
+   python3 despachar.py ENCARGO.md --dry-run        # prepara el worktree sin lanzar oráculo/modelo
    python3 despachar.py ENCARGO.md --reevaluar      # repite oráculo, alcance, mutación y revisor sin lanzar OpenCode
    python3 despachar.py ENCARGO.md --revisar-solo   # solo el revisor, sobre el worktree existente
    python3 despachar.py ENCARGO.md --visor          # un panel por corrida en Herdr (si corrés dentro de Herdr)
+   ```
+
+La CLI valida automáticamente repo, referencia base, tipos de configuración y agentes instalados antes de despachar o revisar. `--validar` no crea worktree ni ejecuta oráculos o modelos. Los oráculos tienen un timeout por comando y, al agotarse, se termina su grupo de procesos. Un worktree reutilizado con cambios sin commitear se bloquea para evitar mezclar trabajo anterior.
    ```
 
 4. **Leé el veredicto** en `runs/<proyecto>-<id>/ronda-N/estado.json`, revisá el diff y decidí.
@@ -68,12 +77,14 @@ No tiene dependencias externas: solo la librería estándar.
 |---|---|---|
 | `pasa` | Oráculo verde, dentro de alcance (y mutación sobre el umbral, si se pidió) | Revisa el diff y propone integrar (el merge es humano) |
 | `tests_debiles` | Oráculo verde, pero la prueba de mutación quedó bajo el umbral | Nueva ronda: pasarle los mutantes sobrevivientes |
+| `error_mutacion` / `mutacion_sin_candidatos` | La evaluación de mutación falló o no encontró sitios para mutar | Corregir la evaluación/configuración; no se aprueba por puntaje ausente |
 | `baseline_rojo` | El encargo exige baseline verde y no lo hay | Arreglar el baseline antes de delegar |
 | `falla_oraculo` | Los tests no pasan | Nueva ronda con feedback concreto |
 | `sin_cambios` / `trabajo_sin_commitear` | No hizo nada, o dejó cambios sueltos | Nueva ronda o los commitea |
 | `fuera_de_alcance` | Tocó archivos no permitidos | Descarta o devuelve sin leer el diff |
 | `dependencia_nueva` / `posible_secreto` | Cambió dependencias o metió algo sensible | Descarta |
 | `timeout` / `error_opencode` | Cuota, proxy o modelo colgado | Revisa `opencode.err` |
+| `worktree_reutilizado_sucio` | El worktree conserva cambios sin commitear de una corrida anterior | Preserva o limpia explícitamente esos cambios antes de reintentar |
 | `tope_rondas` | Ya hubo 2 rondas del mismo encargo | Lo toma Claude |
 
 ---
@@ -83,7 +94,7 @@ No tiene dependencias externas: solo la librería estándar.
 ```
 Claude (director)                       despachar.py                      OpenCode (trabajador)
  │ escribe _encargos/<proy>/NNN.md ───▶ │ git worktree + rama opencode/…
- │                                      │ enlaza .venv / node_modules
+ │                                      │ entornos compartidos solo con opt-in
  │                                      │ opencode run --agent <trabajador> ─▶ trabaja y commitea
  │                                      │ ◀──────── REPORTE.md + commits ─────┘
  │                                      │ oráculo antes/después · alcance · deps · secretos
@@ -119,6 +130,7 @@ orquestador-opencode/
 ├── agents/                      # trabajadores de OpenCode
 ├── skills/director-opencode/    # skill de Claude: el ciclo del director
 ├── tests/                       # unittest del despachador
+├── schemas/estado.v1.schema.json # contrato mínimo versionado de estado.json
 └── runs/                        # logs y estado.json por corrida (ignorado por git)
 ```
 
@@ -129,7 +141,7 @@ orquestador-opencode/
 Probado el 2026-10-13 con un sandbox de análisis de mercado y el agente `tester`:
 
 1. **OpenCode desatendido rechaza leer fuera del worktree** y se detiene en silencio (`external_directory ... auto-rejecting`). Por eso el encargo va incrustado en el mensaje y la ruta del repo original se reescribe.
-2. **Un worktree no trae `.venv` ni `node_modules`** (están en `.gitignore`): el despachador los enlaza y los excluye de git.
+2. **Un worktree no trae `.venv` ni `node_modules`** (están en `.gitignore`): por defecto no se enlazan, para no exponer al trabajador un entorno modificable compartido con el repo original. El opt-in `permitir_entornos_compartidos = true` restaura los symlinks y debe usarse solo cuando el riesgo esté aceptado.
 3. **`git status` colapsa carpetas nuevas** a `docs/`: se usa `-uall` para no dar falsos positivos de alcance.
 4. **No fiarse del "listo" ni de los "bugs encontrados".** El modelo gratuito afirmó asserts que contradecían su propia aritmética y los llamó bugs del código.
 5. **Prueba de mutación como compuerta de calidad:** tests verdes no bastan. Dos bordes de RSI sobrevivieron a la mutación hasta que el director los corrigió.

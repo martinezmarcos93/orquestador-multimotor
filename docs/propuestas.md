@@ -2,7 +2,7 @@
 
 Ideas rescatadas de proyectos similares, convertidas en cambios concretos para este orquestador. Solo ideas: no se copia código ni se instala nada de terceros (varios no tienen licencia, uno es GPL-3.0, y los skills/agentes importados corren con `bash` permitido en modo desatendido).
 
-Estado al 2026-10-13: 64 tests, despachador, cola, mutación, revisor, visor en Herdr. Cada propuesta es un incremento independiente, con tests y prueba en vivo antes del siguiente.
+Estado al 2026-10-14: se amplió el preflight para comprobar el ejecutable inicial del oráculo cuando es inferible; se añadieron timeout por comando de oráculo, bloqueo de worktrees reutilizados sucios, mejoras de concurrencia/trazabilidad de la cola y estado v1 con timestamps/acción siguiente. La tanda nueva de CI está pendiente de confirmación; el entorno real de OpenCode/LiteLLM queda para Claude/Marcos. Cada propuesta es un incremento independiente, con tests y prueba en vivo antes del siguiente.
 
 ## Fuentes revisadas
 
@@ -92,14 +92,16 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 **Problema.** Los tres primeros intentos de la práctica fallaron por errores del encargo (ruta fuera del worktree, `.venv` inexistente), no del modelo.
 
-**Implementación.** `despachar.py --validar ENCARGO.md`, que también corre antes de cada despacho. Comprueba:
-- `permitidos` no vacío y sin `**` en la raíz; `oraculo` presente y su primer comando ejecutable en el repo.
-- `base` existe; el agente existe en `~/.config/opencode/agents/`.
-- El cuerpo no menciona rutas absolutas ajenas al repo (OpenCode desatendido las rechaza).
-- Tamaño del cuerpo bajo un tope (los modelos gratuitos se pierden con contexto largo).
-- Si `agente = "higiene"`, exige `exige_baseline_verde`.
+**Implementación inicial en la rama de hardening.** `python3 despachar.py ENCARGO.md --validar` comprueba manualmente y la CLI aplica el mismo preflight automáticamente antes de despachar/revisar. Comprueba:
+- Tipos y presencia de campos, lista de patrones permitidos relativos sin traversal, lista de comandos de oráculo no vacía, detección de rutas absolutas externas al repo en el cuerpo y ejecutable inicial cuando puede inferirse. Los comandos complejos de shell generan advertencia.
+- Rutas de mutación relativas, umbral de mutación entre 0 y 1 y máximo positivo de mutantes.
+- Existencia del repositorio Git, resolución de la referencia base y agente instalado en `~/.config/opencode/agents/`.
+- Límite total de 30.000 caracteres.
+- No crea worktrees, no ejecuta comandos del oráculo y no lanza OpenCode. Si `exige_baseline_verde = true`, informa que la comprobación ocurre durante el despacho.
 
-**Aceptación.** Cada error de la práctica tiene un test que el validador atrapa.
+**Pendiente para completar P4.** Probar encargos históricos representativos y validar con la instalación real; el preflight no puede demostrar la ejecutabilidad de cada etapa dentro de un pipeline o expansión compleja de shell.
+
+**Aceptación.** Cada error de la práctica tiene un test que el validador atrapa; ningún encargo inválido lanza OpenCode.
 
 ## 5. Encadenar encargos y ciclo tests → implementar
 
