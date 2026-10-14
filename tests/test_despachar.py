@@ -1,0 +1,87 @@
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import despachar as d
+
+ENCARGO = '''+++
+id = "001"
+proyecto = "demo"
+repo = "/tmp/demo"
+agente = "tester"
+tema = "tests-nucleo"
+permitidos = ["tests/**"]
+oraculo = ["pytest -q"]
++++
+# Encargo 001
+'''
+
+
+class TestParseo(unittest.TestCase):
+    def test_parsea_y_aplica_defaults(self):
+        cfg = d.parsear_encargo(ENCARGO)
+        self.assertEqual(cfg["base"], "main")
+        self.assertEqual(cfg["timeout_min"], 20)
+        self.assertEqual(cfg["permitidos"], ["tests/**"])
+
+    def test_sin_bloque_falla(self):
+        with self.assertRaises(ValueError):
+            d.parsear_encargo("# solo markdown")
+
+    def test_faltan_campos(self):
+        with self.assertRaises(ValueError):
+            d.parsear_encargo('+++\nid = "1"\n+++\n')
+
+    def test_rechaza_tema_con_path_traversal(self):
+        with self.assertRaises(ValueError):
+            d.parsear_encargo(ENCARGO.replace("tests-nucleo", "../x"))
+
+
+class TestAlcance(unittest.TestCase):
+    def test_dentro(self):
+        self.assertEqual(d.fuera_de_alcance(["tests/test_a.py", "tests/sub/test_b.py"], ["tests/**"]), [])
+
+    def test_fuera(self):
+        self.assertEqual(d.fuera_de_alcance(["tests/a.py", "src/x.py"], ["tests/**"]), ["src/x.py"])
+
+    def test_un_asterisco_no_cruza_directorios(self):
+        self.assertEqual(d.fuera_de_alcance(["tests/sub/a.py"], ["tests/*.py"]), ["tests/sub/a.py"])
+
+    def test_reporte_siempre_permitido(self):
+        self.assertEqual(d.fuera_de_alcance(["REPORTE.md", "docs/opencode/x/BITACORA.md"], ["tests/**"]), [])
+
+    def test_no_confunde_prefijos(self):
+        self.assertEqual(d.fuera_de_alcance(["tests_extra/a.py"], ["tests/**"]), ["tests_extra/a.py"])
+
+
+class TestVeredicto(unittest.TestCase):
+    base = dict(timeout=False, rc_opencode=0, commits=1, sucios=[], fuera=[], oraculo_ok=True,
+                dependencias=[], secretos=False)
+
+    def v(self, **kw):
+        return d.decidir_resultado(**{**self.base, **kw})
+
+    def test_pasa(self):
+        self.assertEqual(self.v(), "pasa")
+
+    def test_gravedad_secreto_gana(self):
+        self.assertEqual(self.v(secretos=True, fuera=["x"], oraculo_ok=False), "posible_secreto")
+
+    def test_fuera_antes_que_oraculo(self):
+        self.assertEqual(self.v(fuera=["src/x.py"], oraculo_ok=False), "fuera_de_alcance")
+
+    def test_sin_cambios_y_error(self):
+        self.assertEqual(self.v(commits=0), "sin_cambios")
+        self.assertEqual(self.v(commits=0, rc_opencode=1), "error_opencode")
+
+    def test_sin_commitear(self):
+        self.assertEqual(self.v(sucios=["a.py"]), "trabajo_sin_commitear")
+
+    def test_falla_oraculo_y_timeout(self):
+        self.assertEqual(self.v(oraculo_ok=False), "falla_oraculo")
+        self.assertEqual(self.v(timeout=True), "timeout")
+
+
+if __name__ == "__main__":
+    unittest.main()
