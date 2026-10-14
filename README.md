@@ -39,14 +39,25 @@ No tiene dependencias externas: solo la librería estándar.
    permitidos = ["tests/**"]
    oraculo = [".venv/bin/python -m pytest -q"]
    timeout_min = 20
+   revisor = true                 # opcional: revisión de solo lectura tras un "pasa"
+   exige_baseline_verde = false   # true para higiene: sin baseline verde no se lanza nada
+
+   [mutacion]                     # opcional: prueba de mutación (Python)
+   archivos = ["market_analyzer.py"]
+   funciones = ["calcular_signal"]  # opcional: limita las funciones a mutar
+   umbral = 0.8
    +++
    ```
 
 3. **Despachá** (desde Claude, con `run_in_background`; se reactiva solo al terminar):
 
    ```bash
-   python3 despachar.py ENCARGO.md
-   python3 despachar.py ENCARGO.md --dry-run     # prepara el worktree sin gastar cuota
+   python3 despachar.py ENCARGO.md                  # un encargo
+   python3 cola.py E1.md E2.md E3.md --max 2        # varios en paralelo (máx. 3), sin pisarse
+   python3 despachar.py ENCARGO.md --dry-run        # prepara el worktree sin gastar cuota
+   python3 despachar.py ENCARGO.md --reevaluar      # repite oráculo, alcance, mutación y revisor sin lanzar OpenCode
+   python3 despachar.py ENCARGO.md --revisar-solo   # solo el revisor, sobre el worktree existente
+   python3 despachar.py ENCARGO.md --visor          # un panel por corrida en Herdr (si corrés dentro de Herdr)
    ```
 
 4. **Leé el veredicto** en `runs/<proyecto>-<id>/ronda-N/estado.json`, revisá el diff y decidí.
@@ -55,7 +66,9 @@ No tiene dependencias externas: solo la librería estándar.
 
 | `resultado` | Qué significa | Qué hace el director |
 |---|---|---|
-| `pasa` | Oráculo verde, dentro de alcance | Revisa el diff y propone integrar (el merge es humano) |
+| `pasa` | Oráculo verde, dentro de alcance (y mutación sobre el umbral, si se pidió) | Revisa el diff y propone integrar (el merge es humano) |
+| `tests_debiles` | Oráculo verde, pero la prueba de mutación quedó bajo el umbral | Nueva ronda: pasarle los mutantes sobrevivientes |
+| `baseline_rojo` | El encargo exige baseline verde y no lo hay | Arreglar el baseline antes de delegar |
 | `falla_oraculo` | Los tests no pasan | Nueva ronda con feedback concreto |
 | `sin_cambios` / `trabajo_sin_commitear` | No hizo nada, o dejó cambios sueltos | Nueva ronda o los commitea |
 | `fuera_de_alcance` | Tocó archivos no permitidos | Descarta o devuelve sin leer el diff |
@@ -88,6 +101,8 @@ Cada trabajador es un agente de OpenCode (`agents/*.md`) con su propio prompt y 
 |---|---|---|
 | `tester` | Escribe solo tests | `tests/**`, `REPORTE.md`, `docs/opencode/**` |
 | `implementador` | Una tarea acotada de código | Archivos permitidos del encargo |
+| `higiene` | Limpieza sin cambiar comportamiento (imports, código muerto, logging); exige baseline verde | Archivos permitidos del encargo |
+| `revisor` | Revisa el diff de la rama y reporta hallazgos `[ALTA/MEDIA/BAJA]` con evidencia | Nada (solo lectura; el despachador verifica que no tocó el worktree) |
 
 ---
 
@@ -97,6 +112,9 @@ Cada trabajador es un agente de OpenCode (`agents/*.md`) con su propio prompt y 
 orquestador-opencode/
 ├── README.md
 ├── despachar.py                 # despachador: un encargo → un veredicto
+├── cola.py                      # varios encargos en paralelo (2-3), sin pisarse
+├── mutacion.py                  # prueba de mutación para Python (AST, sin dependencias)
+├── visor.py / ver.py            # panel opcional en Herdr y su formateador en vivo
 ├── instalar.sh                  # instala agentes y skill
 ├── agents/                      # trabajadores de OpenCode
 ├── skills/director-opencode/    # skill de Claude: el ciclo del director
@@ -115,6 +133,14 @@ Probado el 2026-10-13 con un sandbox de análisis de mercado y el agente `tester
 3. **`git status` colapsa carpetas nuevas** a `docs/`: se usa `-uall` para no dar falsos positivos de alcance.
 4. **No fiarse del "listo" ni de los "bugs encontrados".** El modelo gratuito afirmó asserts que contradecían su propia aritmética y los llamó bugs del código.
 5. **Prueba de mutación como compuerta de calidad:** tests verdes no bastan. Dos bordes de RSI sobrevivieron a la mutación hasta que el director los corrigió.
+
+---
+
+6. **Los tests del propio orquestador necesitan casos de regresión reales.** Dos bugs míos pasaron los tests y aparecieron con trabajo real: `git()` hacía `strip()` y `' M archivo'` perdía la primera letra (`arket_analyzer.py` → falso `fuera_de_alcance`), y `herdr pane run` responde rc 0 con stdout vacío, lo que reventaba el parser del visor.
+7. **El revisor se calibró, no se asumió:** sobre una rama con defectos sembrados (cambio silencioso de producción, secreto, test sin asserts, assert contradictorio) detectó 4 de 4 con evidencia y 0 falsos positivos; sobre la rama buena respondió APTO. Omitió un import sin usar (baja).
+8. **Paralelismo real:** dos trabajadores a la vez tardaron 258 s en vez de ~440 s en serie. El candado por proyecto evita que dos `git worktree add` choquen, y el planificador serializa encargos que podrían tocar los mismos archivos.
+9. **Un trabajador contaminó la suite** reemplazando `sys.modules["rich"]` por un `MagicMock` a nivel de módulo; el oráculo (la suite completa) lo detectó y la ronda 2, con feedback concreto, lo corrigió.
+10. **Límite de la mutación:** con pocas funciones el universo es chico (4 mutantes en `guardar_reporte`) y el puntaje es grueso; sirve para encontrar bordes concretos, no como porcentaje de calidad.
 
 ---
 

@@ -75,6 +75,23 @@ class TestEntornos(unittest.TestCase):
             self.assertEqual(d.git(wt, "status", "--porcelain"), "")
             self.assertEqual(d.enlazar_entornos(repo, wt), [])
 
+    def test_sucios_no_pierde_la_primera_letra_de_un_archivo_modificado(self):
+        """Regresión: git() hacía strip() y ' M archivo' perdía un carácter ('arket_analyzer.py')."""
+        import subprocess, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            run = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a],
+                                            cwd=repo, check=True, capture_output=True)
+            run("init", "-q", "-b", "main")
+            (repo / "market_analyzer.py").write_text("a", encoding="utf-8")
+            (repo / "docs").mkdir()
+            (repo / "docs" / "x.md").write_text("a", encoding="utf-8")
+            run("add", "-A")
+            run("commit", "-qm", "base")
+            (repo / "market_analyzer.py").write_text("b", encoding="utf-8")      # ' M'
+            (repo / "docs" / "x.md").write_text("b", encoding="utf-8")           # ' M'
+            self.assertEqual(sorted(d.listar_sucios(repo)), ["docs/x.md", "market_analyzer.py"])
+
     def test_sucios_lista_archivos_no_carpetas(self):
         import subprocess, tempfile
         with tempfile.TemporaryDirectory() as tmp:

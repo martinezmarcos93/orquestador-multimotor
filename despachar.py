@@ -22,6 +22,7 @@ from datetime import date
 from pathlib import Path
 
 import mutacion
+import visor as visor_herdr
 
 logger = logging.getLogger("despachar")
 
@@ -103,6 +104,12 @@ def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: 
     return "pasa"
 
 
+def etapa(run: Path, texto: str) -> None:
+    """Marcador de etapa legible para el visor (ver.py)."""
+    with (run / "etapas.log").open("a", encoding="utf-8") as f:
+        f.write(f"{time.strftime('%H:%M:%S')} ── {texto}\n")
+
+
 @contextlib.contextmanager
 def candado(nombre: str):
     """Exclusión entre procesos (despachos en paralelo) para operaciones que lockean el .git del repo."""
@@ -124,8 +131,13 @@ def git(cwd: Path, *args: str, check: bool = True) -> str:
 
 
 def listar_sucios(wt: Path) -> list[str]:
-    """Archivos sin commitear, uno por uno (-uall: sin esto git colapsa carpetas nuevas a 'docs/')."""
-    return [l[3:] for l in git(wt, "status", "--porcelain", "-uall").splitlines()]
+    """Archivos sin commitear, uno por uno (-uall: sin esto git colapsa carpetas nuevas a 'docs/').
+    Sin strip(): la primera línea puede empezar con un espacio (' M archivo') y se perdería una letra."""
+    r = subprocess.run(["git", "status", "--porcelain", "-uall"], cwd=wt, capture_output=True, text=True,
+                       encoding="utf-8")
+    if r.returncode != 0:
+        raise RuntimeError(f"git status falló: {r.stderr.strip()}")
+    return [l[3:] for l in r.stdout.splitlines() if l]
 
 
 def correr_oraculo(comandos: list[str], cwd: Path, repo: Path, log: Path) -> bool:
@@ -248,7 +260,7 @@ def revisar_solo(ruta_encargo: Path) -> dict:
             "revision": revisar(cfg, texto, wt, run, git(repo, "rev-parse", cfg["base"]))}
 
 
-def despachar(ruta_encargo: Path, dry_run: bool = False) -> dict:
+def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: bool = False) -> dict:
     texto = ruta_encargo.read_text(encoding="utf-8")
     cfg = parsear_encargo(texto)
     repo = Path(cfg["repo"]).expanduser()
@@ -257,100 +269,139 @@ def despachar(ruta_encargo: Path, dry_run: bool = False) -> dict:
 
     run_base = RUNS / f"{cfg['proyecto']}-{cfg['id']}"
     ronda = 1 + sum(1 for r in run_base.glob("ronda-*") if (r / "opencode.jsonl").exists())
+    if reevaluar:
+        if ronda == 1:
+            raise ValueError("no hay ninguna ronda ejecutada que reevaluar")
+        ronda -= 1      # la última ronda ya ejecutada; no consume una nueva
     estado = {"id": cfg["id"], "proyecto": cfg["proyecto"], "agente": cfg["agente"], "ronda": ronda}
-    if ronda > MAX_RONDAS:
+    if ronda > MAX_RONDAS and not reevaluar:
         estado["resultado"] = "tope_rondas"
         estado["nota"] = f"ya se hicieron {MAX_RONDAS} rondas: lo toma Claude (regla de calibre)"
         return estado
-    run = run_base / f"ronda-{ronda}"
+    run = run_base / ("reevaluacion" if reevaluar else f"ronda-{ronda}")
     run.mkdir(parents=True, exist_ok=True)
+    (run / "FIN").unlink(missing_ok=True)
+    estado["run"] = str(run)
+    etapa(run, f"encargo {cfg['id']} · ronda {ronda} · agente {cfg['agente']}")
+    pane = None
+    if visor and not dry_run:
+        pane = visor.abrir(f"{cfg['proyecto']}-{cfg['id']} r{ronda}",
+                           [sys.executable, "-B", str(RAIZ / "ver.py"), str(run)], str(RAIZ))
+    try:
+        with candado(cfg["proyecto"]):
+            sha_base_main = git(repo, "rev-parse", cfg["base"])
+            wt, rama, reutilizado = preparar_worktree(cfg, repo)
+            enlazados = enlazar_entornos(repo, wt)
+        etapa(run, f"worktree listo · rama {rama}")
+        estado.update(rama=rama, worktree=str(wt), reutilizado=reutilizado, entornos_enlazados=enlazados)
+        if dry_run:
+            estado["resultado"] = "dry_run"
+            estado["mensaje"] = mensaje_para_opencode(texto, wt, repo)
+            return estado
 
-    with candado(cfg["proyecto"]):
-        sha_base_main = git(repo, "rev-parse", cfg["base"])
-        wt, rama, reutilizado = preparar_worktree(cfg, repo)
-        enlazados = enlazar_entornos(repo, wt)
-    estado.update(rama=rama, worktree=str(wt), reutilizado=reutilizado, entornos_enlazados=enlazados)
-    if dry_run:
-        estado["resultado"] = "dry_run"
-        estado["mensaje"] = mensaje_para_opencode(texto, wt, repo)
+        log_oraculo = run / "oraculo.log"
+        t0, timeout, rc = time.time(), False, 0
+        if reevaluar:
+            etapa(run, "reevaluación: no se vuelve a lanzar OpenCode (ni se gasta cuota ni una ronda)")
+        else:
+            etapa(run, "oráculo (antes)")
+            estado["oraculo_antes"] = correr_oraculo(cfg["oraculo"], wt, repo, log_oraculo)
+            if cfg.get("exige_baseline_verde") and not estado["oraculo_antes"]:
+                estado["resultado"] = "baseline_rojo"
+                estado["nota"] = "este encargo exige baseline verde para poder probar que no cambió el comportamiento"
+                return estado
+
+            etapa(run, f"OpenCode trabajando (máx {cfg['timeout_min']} min)")
+            cmd = ["opencode", "run", "--agent", cfg["agente"], "--dir", str(wt), "--format", "json",
+                   "--title", f"enc-{cfg['id']}-r{ronda}", mensaje_para_opencode(texto, wt, repo)]
+            logger.info("lanzando: %s", shlex.join(cmd[:8]))
+            with (run / "opencode.jsonl").open("w", encoding="utf-8") as out, \
+                 (run / "opencode.err").open("w", encoding="utf-8") as err:
+                try:
+                    rc = subprocess.run(cmd, stdout=out, stderr=err, timeout=cfg["timeout_min"] * 60,
+                                        stdin=subprocess.DEVNULL).returncode
+                except subprocess.TimeoutExpired:
+                    timeout, rc = True, -1
+                    logger.error("OpenCode excedió %s min", cfg["timeout_min"])
+            estado["duracion_s"] = round(time.time() - t0)
+
+        base_ref = sha_base_main
+        commits = int(git(wt, "rev-list", "--count", f"{base_ref}..HEAD") or 0)
+        cambiados = set(git(wt, "diff", "--name-only", f"{base_ref}..HEAD").splitlines())
+        sucios = listar_sucios(wt)
+        cambiados |= set(sucios)
+        diff = git(wt, "diff", f"{base_ref}..HEAD", check=False)
+        añadidas = "\n".join(l for l in diff.splitlines() if l.startswith("+") and not l.startswith("+++"))
+        fuera = fuera_de_alcance(sorted(cambiados), cfg["permitidos"])
+        dependencias = sorted(a for a in cambiados if Path(a).name in ARCHIVOS_DEPENDENCIAS)
+        etapa(run, "oráculo (después) y verificación de alcance")
+        oraculo_ok = correr_oraculo(cfg["oraculo"], wt, repo, log_oraculo)
+
+        mut_cfg = cfg.get("mutacion")
+        resumen_mut = None
+        if mut_cfg and commits and oraculo_ok and not fuera and not sucios:
+            etapa(run, "prueba de mutación")
+            logger.info("prueba de mutación sobre %s", mut_cfg["archivos"])
+            resumen_mut = mutacion.evaluar(wt, mut_cfg["archivos"], cfg["oraculo"], mut_cfg.get("funciones"),
+                                           mut_cfg["max"])
+            (run / "mutacion.json").write_text(json.dumps(resumen_mut, indent=2, ensure_ascii=False), encoding="utf-8")
+        estado.update(
+            commits=commits, archivos=sorted(cambiados), fuera_de_alcance=fuera, sin_commitear=sucios,
+            dependencias_tocadas=dependencias, oraculo_despues=oraculo_ok,
+            reporte=(wt / "REPORTE.md").exists(), rc_opencode=rc,
+            main_intacto=git(repo, "rev-parse", cfg["base"]) == sha_base_main,
+            resultado=decidir_resultado(timeout=timeout, rc_opencode=rc, commits=commits, sucios=sucios,
+                                        fuera=fuera, oraculo_ok=oraculo_ok, dependencias=dependencias,
+                                        secretos=bool(PATRON_SECRETO.search(añadidas)),
+                                        puntaje_mutacion=(resumen_mut or {}).get("puntaje"),
+                                        umbral_mutacion=(mut_cfg or {}).get("umbral", 0.0)),
+        )
+        if cfg.get("revisor") and estado["resultado"] in ("pasa", "tests_debiles"):
+            etapa(run, "revisor (solo lectura)")
+            logger.info("etapa de revisión (solo lectura)")
+            estado["revision"] = revisar(cfg, texto, wt, run, base_ref)
+        if resumen_mut:
+            estado["mutacion"] = {k: resumen_mut[k] for k in ("total", "muertos", "puntaje") if k in resumen_mut}
+            estado["mutacion"]["sobrevivientes"] = resumen_mut.get("sobrevivientes", [])[:15]
+            if "error" in resumen_mut:
+                estado["mutacion"]["error"] = resumen_mut["error"]
         return estado
 
-    log_oraculo = run / "oraculo.log"
-    estado["oraculo_antes"] = correr_oraculo(cfg["oraculo"], wt, repo, log_oraculo)
-    if cfg.get("exige_baseline_verde") and not estado["oraculo_antes"]:
-        estado["resultado"] = "baseline_rojo"
-        estado["nota"] = "este encargo exige baseline verde para poder probar que no cambió el comportamiento"
-        return estado
+    finally:
+        etapa(run, f"veredicto: {estado.get('resultado')}")
+        (run / "FIN").touch()
+        if visor:
+            visor.liberar(pane)
 
-    cmd = ["opencode", "run", "--agent", cfg["agente"], "--dir", str(wt), "--format", "json",
-           "--title", f"enc-{cfg['id']}-r{ronda}", mensaje_para_opencode(texto, wt, repo)]
-    logger.info("lanzando: %s", shlex.join(cmd[:8]))
-    t0, timeout, rc = time.time(), False, 0
-    with (run / "opencode.jsonl").open("w", encoding="utf-8") as out, \
-         (run / "opencode.err").open("w", encoding="utf-8") as err:
-        try:
-            rc = subprocess.run(cmd, stdout=out, stderr=err, timeout=cfg["timeout_min"] * 60,
-                                stdin=subprocess.DEVNULL).returncode
-        except subprocess.TimeoutExpired:
-            timeout, rc = True, -1
-            logger.error("OpenCode excedió %s min", cfg["timeout_min"])
-    estado["duracion_s"] = round(time.time() - t0)
-
-    base_ref = sha_base_main
-    commits = int(git(wt, "rev-list", "--count", f"{base_ref}..HEAD") or 0)
-    cambiados = set(git(wt, "diff", "--name-only", f"{base_ref}..HEAD").splitlines())
-    sucios = listar_sucios(wt)
-    cambiados |= set(sucios)
-    diff = git(wt, "diff", f"{base_ref}..HEAD", check=False)
-    añadidas = "\n".join(l for l in diff.splitlines() if l.startswith("+") and not l.startswith("+++"))
-    fuera = fuera_de_alcance(sorted(cambiados), cfg["permitidos"])
-    dependencias = sorted(a for a in cambiados if Path(a).name in ARCHIVOS_DEPENDENCIAS)
-    oraculo_ok = correr_oraculo(cfg["oraculo"], wt, repo, log_oraculo)
-
-    mut_cfg = cfg.get("mutacion")
-    resumen_mut = None
-    if mut_cfg and commits and oraculo_ok and not fuera and not sucios:
-        logger.info("prueba de mutación sobre %s", mut_cfg["archivos"])
-        resumen_mut = mutacion.evaluar(wt, mut_cfg["archivos"], cfg["oraculo"], mut_cfg.get("funciones"),
-                                       mut_cfg["max"])
-        (run / "mutacion.json").write_text(json.dumps(resumen_mut, indent=2, ensure_ascii=False), encoding="utf-8")
-    estado.update(
-        commits=commits, archivos=sorted(cambiados), fuera_de_alcance=fuera, sin_commitear=sucios,
-        dependencias_tocadas=dependencias, oraculo_despues=oraculo_ok,
-        reporte=(wt / "REPORTE.md").exists(), rc_opencode=rc,
-        main_intacto=git(repo, "rev-parse", cfg["base"]) == sha_base_main,
-        resultado=decidir_resultado(timeout=timeout, rc_opencode=rc, commits=commits, sucios=sucios,
-                                    fuera=fuera, oraculo_ok=oraculo_ok, dependencias=dependencias,
-                                    secretos=bool(PATRON_SECRETO.search(añadidas)),
-                                    puntaje_mutacion=(resumen_mut or {}).get("puntaje"),
-                                    umbral_mutacion=(mut_cfg or {}).get("umbral", 0.0)),
-    )
-    if cfg.get("revisor") and estado["resultado"] in ("pasa", "tests_debiles"):
-        logger.info("etapa de revisión (solo lectura)")
-        estado["revision"] = revisar(cfg, texto, wt, run, base_ref)
-    if resumen_mut:
-        estado["mutacion"] = {k: resumen_mut[k] for k in ("total", "muertos", "puntaje") if k in resumen_mut}
-        estado["mutacion"]["sobrevivientes"] = resumen_mut.get("sobrevivientes", [])[:15]
-        if "error" in resumen_mut:
-            estado["mutacion"]["error"] = resumen_mut["error"]
-    return estado
+def crear_visor(pedido: bool):
+    """Visor de Herdr solo si se pidió (--visor o ORQUESTADOR_VISOR=1) y estamos dentro de Herdr."""
+    if not (pedido or os.environ.get("ORQUESTADOR_VISOR") == "1"):
+        return None
+    if not visor_herdr.disponible():
+        logger.info("visor pedido, pero no corre dentro de Herdr: se omite")
+        return None
+    RUNS.mkdir(exist_ok=True)
+    return visor_herdr.Visor(RUNS / ".visor.json")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("encargo", type=Path)
     ap.add_argument("--dry-run", action="store_true", help="prepara el worktree y muestra el mensaje, sin lanzar OpenCode")
+    ap.add_argument("--visor", action="store_true", help="abre un panel en Herdr (solo si corre dentro de Herdr)")
+    ap.add_argument("--reevaluar", action="store_true",
+                    help="repite oráculo, alcance, mutación y revisor sobre el trabajo ya hecho, sin lanzar OpenCode")
     ap.add_argument("--revisar-solo", action="store_true", help="corre solo el revisor sobre el worktree existente")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
     try:
         estado = (revisar_solo(args.encargo.resolve()) if args.revisar_solo
-                  else despachar(args.encargo.resolve(), args.dry_run))
+                  else despachar(args.encargo.resolve(), args.dry_run, crear_visor(args.visor), args.reevaluar))
     except Exception as e:
         logger.error("no se pudo despachar: %s", e, exc_info=True)
         estado = {"resultado": "error_despachador", "error": str(e)}
-    if "proyecto" in estado and "ronda" in estado and estado.get("resultado") != "tope_rondas":
-        destino = RUNS / f"{estado['proyecto']}-{estado['id']}" / f"ronda-{estado['ronda']}" / "estado.json"
+    if estado.get("run"):
+        destino = Path(estado["run"]) / "estado.json"
         destino.write_text(json.dumps(estado, indent=2, ensure_ascii=False), encoding="utf-8")
         estado["estado_json"] = str(destino)
     print(json.dumps(estado, indent=2, ensure_ascii=False))

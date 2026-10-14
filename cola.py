@@ -10,6 +10,7 @@ Uso: cola.py ENCARGO.md [ENCARGO.md ...] [--max 2]
 import argparse
 import json
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -102,9 +103,12 @@ def cargar(rutas: list[Path]) -> list[dict]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("encargos", nargs="+", type=Path)
+    ap.add_argument("--visor", action="store_true", help="un panel por corrida en Herdr (si corre dentro de Herdr)")
     ap.add_argument("--max", type=int, default=2, help=f"trabajadores en paralelo (1-{MAX_PERMITIDO})")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
+    if args.visor:
+        os.environ["ORQUESTADOR_VISOR"] = "1"
     t0 = time.time()
     resultados = planificar(cargar(args.encargos), runner_subproceso, args.max)
     resumen = {"duracion_s": round(time.time() - t0), "max_paralelo": args.max,

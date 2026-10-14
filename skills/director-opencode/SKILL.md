@@ -11,6 +11,8 @@ Reglas de calibre y de obediencia: `delegacion-opencode` y `_metodologias/claude
 ## Trabajadores (agentes de OpenCode, `~/.config/opencode/agents/`)
 - `tester`: solo escribe tests; no puede editar fuera de `tests/`/`test/`.
 - `implementador`: una tarea acotada dentro de los archivos permitidos.
+- `higiene`: limpieza sin cambiar comportamiento; usá `exige_baseline_verde = true` y una base con tests verdes.
+- `revisor`: solo lectura. Se activa con `revisor = true` en el encargo; deja `revision.md` (hallazgos `[ALTA|MEDIA|BAJA]` con evidencia). Tomalo como pista, no como veredicto: verificá cada hallazgo ALTA en el diff.
 
 ## Ciclo
 1. **Elegí** proyecto (nivel C o D), trabajador y una tarea chica (los modelos gratuitos se pierden con contexto largo). Si no es git en ext4, se prepara primero un sandbox.
@@ -38,6 +40,12 @@ Reglas de calibre y de obediencia: `delegacion-opencode` y `_metodologias/claude
    - `timeout`, `error_opencode`: mirá `opencode.err`; probablemente cuota o proxy (`systemctl --user status litellm-opencode`).
    - `tope_rondas`: lo tomás vos.
 6. **Bitácora:** anotá qué se delegó, qué se integró y qué se rechazó, con el motivo.
+
+## Opciones del despachador
+- Varios encargos: `cola.py E1.md E2.md --max 2` (tope 3). Encargos del mismo repo con `permitidos` que se superponen o el mismo `tema` se serializan solos.
+- `--reevaluar`: repite oráculo, alcance, mutación y revisor sobre el trabajo ya hecho, sin lanzar OpenCode ni consumir ronda. Usalo después de commitear a mano algo menor (bitácoras sueltas) o de arreglar un detalle.
+- `[mutacion]` en el encargo: `archivos`, `funciones` (opcional), `umbral` (0.8). Bajo el umbral → `tests_debiles` con la lista de sobrevivientes en `estado.json`.
+- `--visor` (o `ORQUESTADOR_VISOR=1`): un panel por corrida en una pestaña `orquestador` de Herdr, solo si Claude corre dentro de Herdr. Nunca roba el foco ni toca paneles ajenos; cerrá la pestaña al terminar si no la querés.
 
 ## Reglas
 - Paralelismo máximo 2-3 trabajadores (comparten cuota gratuita). Un worktree por tema.
