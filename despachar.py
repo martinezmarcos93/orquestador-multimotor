@@ -19,6 +19,8 @@ import tomllib
 from datetime import date
 from pathlib import Path
 
+import mutacion
+
 logger = logging.getLogger("despachar")
 
 RAIZ = Path(__file__).resolve().parent
@@ -44,6 +46,12 @@ def parsear_encargo(texto: str) -> dict:
     for campo in ("proyecto", "tema", "id", "agente"):
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", str(cfg[campo])):
             raise ValueError(f"valor inválido en '{campo}': {cfg[campo]!r}")
+    mut = cfg.get("mutacion")
+    if mut is not None:
+        if not isinstance(mut.get("archivos"), list) or not mut["archivos"]:
+            raise ValueError("[mutacion] requiere 'archivos' (lista no vacía)")
+        mut.setdefault("umbral", 0.8)
+        mut.setdefault("max", 80)
     cfg.setdefault("base", "main")
     cfg.setdefault("timeout_min", 20)
     return cfg
@@ -71,7 +79,8 @@ def fuera_de_alcance(archivos: list[str], permitidos: list[str]) -> list[str]:
 
 
 def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: list[str],
-                      fuera: list[str], oraculo_ok: bool, dependencias: list[str], secretos: bool) -> str:
+                      fuera: list[str], oraculo_ok: bool, dependencias: list[str], secretos: bool,
+                      puntaje_mutacion: float | None = None, umbral_mutacion: float = 0.0) -> str:
     """Veredicto único; el orden es el de gravedad."""
     if secretos:
         return "posible_secreto"
@@ -87,6 +96,8 @@ def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: 
         return "trabajo_sin_commitear"
     if not oraculo_ok:
         return "falla_oraculo"
+    if puntaje_mutacion is not None and puntaje_mutacion < umbral_mutacion:
+        return "tests_debiles"
     return "pasa"
 
 
@@ -209,6 +220,13 @@ def despachar(ruta_encargo: Path, dry_run: bool = False) -> dict:
     dependencias = sorted(a for a in cambiados if Path(a).name in ARCHIVOS_DEPENDENCIAS)
     oraculo_ok = correr_oraculo(cfg["oraculo"], wt, repo, log_oraculo)
 
+    mut_cfg = cfg.get("mutacion")
+    resumen_mut = None
+    if mut_cfg and commits and oraculo_ok and not fuera and not sucios:
+        logger.info("prueba de mutación sobre %s", mut_cfg["archivos"])
+        resumen_mut = mutacion.evaluar(wt, mut_cfg["archivos"], cfg["oraculo"], mut_cfg.get("funciones"),
+                                       mut_cfg["max"])
+        (run / "mutacion.json").write_text(json.dumps(resumen_mut, indent=2, ensure_ascii=False), encoding="utf-8")
     estado.update(
         commits=commits, archivos=sorted(cambiados), fuera_de_alcance=fuera, sin_commitear=sucios,
         dependencias_tocadas=dependencias, oraculo_despues=oraculo_ok,
@@ -216,8 +234,15 @@ def despachar(ruta_encargo: Path, dry_run: bool = False) -> dict:
         main_intacto=git(repo, "rev-parse", cfg["base"]) == sha_base_main,
         resultado=decidir_resultado(timeout=timeout, rc_opencode=rc, commits=commits, sucios=sucios,
                                     fuera=fuera, oraculo_ok=oraculo_ok, dependencias=dependencias,
-                                    secretos=bool(PATRON_SECRETO.search(añadidas))),
+                                    secretos=bool(PATRON_SECRETO.search(añadidas)),
+                                    puntaje_mutacion=(resumen_mut or {}).get("puntaje"),
+                                    umbral_mutacion=(mut_cfg or {}).get("umbral", 0.0)),
     )
+    if resumen_mut:
+        estado["mutacion"] = {k: resumen_mut[k] for k in ("total", "muertos", "puntaje") if k in resumen_mut}
+        estado["mutacion"]["sobrevivientes"] = resumen_mut.get("sobrevivientes", [])[:15]
+        if "error" in resumen_mut:
+            estado["mutacion"]["error"] = resumen_mut["error"]
     return estado
 
 

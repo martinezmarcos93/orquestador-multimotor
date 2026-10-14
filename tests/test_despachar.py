@@ -25,6 +25,15 @@ class TestParseo(unittest.TestCase):
         self.assertEqual(cfg["timeout_min"], 20)
         self.assertEqual(cfg["permitidos"], ["tests/**"])
 
+    def test_mutacion_con_defaults(self):
+        cfg = d.parsear_encargo(ENCARGO.replace("+++\n# Encargo", '[mutacion]\narchivos = ["a.py"]\n+++\n# Encargo'))
+        self.assertEqual(cfg["mutacion"]["umbral"], 0.8)
+        self.assertEqual(cfg["mutacion"]["max"], 80)
+
+    def test_mutacion_sin_archivos_falla(self):
+        with self.assertRaises(ValueError):
+            d.parsear_encargo(ENCARGO.replace("+++\n# Encargo", '[mutacion]\numbral = 0.5\n+++\n# Encargo'))
+
     def test_sin_bloque_falla(self):
         with self.assertRaises(ValueError):
             d.parsear_encargo("# solo markdown")
@@ -121,6 +130,14 @@ class TestVeredicto(unittest.TestCase):
 
     def test_sin_commitear(self):
         self.assertEqual(self.v(sucios=["a.py"]), "trabajo_sin_commitear")
+
+    def test_tests_debiles_por_mutacion(self):
+        self.assertEqual(self.v(puntaje_mutacion=0.5, umbral_mutacion=0.8), "tests_debiles")
+        self.assertEqual(self.v(puntaje_mutacion=0.9, umbral_mutacion=0.8), "pasa")
+        self.assertEqual(self.v(puntaje_mutacion=None, umbral_mutacion=0.8), "pasa")
+
+    def test_mutacion_no_enmascara_un_oraculo_roto(self):
+        self.assertEqual(self.v(oraculo_ok=False, puntaje_mutacion=0.1, umbral_mutacion=0.8), "falla_oraculo")
 
     def test_falla_oraculo_y_timeout(self):
         self.assertEqual(self.v(oraculo_ok=False), "falla_oraculo")
