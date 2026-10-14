@@ -132,14 +132,14 @@ def despachar(ruta_encargo: Path, dry_run: bool = False) -> dict:
         raise ValueError(f"{repo} no es un repo git")
 
     run_base = RUNS / f"{cfg['proyecto']}-{cfg['id']}"
-    ronda = len(list(run_base.glob("ronda-*"))) + 1 if run_base.exists() else 1
+    ronda = 1 + sum(1 for r in run_base.glob("ronda-*") if (r / "opencode.jsonl").exists())
     estado = {"id": cfg["id"], "proyecto": cfg["proyecto"], "agente": cfg["agente"], "ronda": ronda}
     if ronda > MAX_RONDAS:
         estado["resultado"] = "tope_rondas"
         estado["nota"] = f"ya se hicieron {MAX_RONDAS} rondas: lo toma Claude (regla de calibre)"
         return estado
     run = run_base / f"ronda-{ronda}"
-    run.mkdir(parents=True)
+    run.mkdir(parents=True, exist_ok=True)
 
     sha_base_main = git(repo, "rev-parse", cfg["base"])
     wt, rama, reutilizado = preparar_worktree(cfg, repo)
