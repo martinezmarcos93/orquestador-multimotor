@@ -146,7 +146,7 @@ Probado el 2026-10-13 con un sandbox de análisis de mercado y el agente `tester
 
 ## Qué sigue
 
-Las ideas rescatadas de proyectos similares, convertidas en cambios concretos y ordenadas por impacto, están en [`docs/propuestas.md`](docs/propuestas.md).
+El plan por fases, con criterio de aceptación para cada ítem, está en [`ROADMAP.md`](ROADMAP.md). El diseño y el origen de cada idea (rescatadas de proyectos similares) están en [`docs/propuestas.md`](docs/propuestas.md).
 
 ---
 
