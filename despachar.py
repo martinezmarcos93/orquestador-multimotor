@@ -7,6 +7,8 @@ corre el oráculo y verifica el alcance. Claude no teclea en ninguna terminal: l
 Uso: despachar.py ENCARGO.md [--dry-run]
 """
 import argparse
+import contextlib
+import fcntl
 import json
 import logging
 import os
@@ -99,6 +101,19 @@ def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: 
     if puntaje_mutacion is not None and puntaje_mutacion < umbral_mutacion:
         return "tests_debiles"
     return "pasa"
+
+
+@contextlib.contextmanager
+def candado(nombre: str):
+    """Exclusión entre procesos (despachos en paralelo) para operaciones que lockean el .git del repo."""
+    carpeta = RUNS / ".locks"
+    carpeta.mkdir(parents=True, exist_ok=True)
+    with (carpeta / f"{nombre}.lock").open("w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def git(cwd: Path, *args: str, check: bool = True) -> str:
@@ -250,9 +265,11 @@ def despachar(ruta_encargo: Path, dry_run: bool = False) -> dict:
     run = run_base / f"ronda-{ronda}"
     run.mkdir(parents=True, exist_ok=True)
 
-    sha_base_main = git(repo, "rev-parse", cfg["base"])
-    wt, rama, reutilizado = preparar_worktree(cfg, repo)
-    estado.update(rama=rama, worktree=str(wt), reutilizado=reutilizado, entornos_enlazados=enlazar_entornos(repo, wt))
+    with candado(cfg["proyecto"]):
+        sha_base_main = git(repo, "rev-parse", cfg["base"])
+        wt, rama, reutilizado = preparar_worktree(cfg, repo)
+        enlazados = enlazar_entornos(repo, wt)
+    estado.update(rama=rama, worktree=str(wt), reutilizado=reutilizado, entornos_enlazados=enlazados)
     if dry_run:
         estado["resultado"] = "dry_run"
         estado["mensaje"] = mensaje_para_opencode(texto, wt, repo)
