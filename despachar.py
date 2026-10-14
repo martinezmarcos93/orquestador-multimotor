@@ -119,14 +119,18 @@ def preparar_worktree(cfg: dict, repo: Path) -> tuple[Path, str, bool]:
     return wt, rama, False
 
 
-def mensaje_para_opencode(ruta_encargo: Path, wt: Path) -> str:
-    return (f"Cargá la skill `delegacion-opencode` y seguila al pie de la letra. "
-            f"Tu encargo está en {ruta_encargo}. Trabajá solo en el worktree {wt} (ya está creado). "
-            f"Al terminar dejá REPORTE.md en la raíz del worktree.")
+def mensaje_para_opencode(texto_encargo: str, wt: Path) -> str:
+    """El encargo va incrustado: OpenCode desatendido rechaza leer rutas fuera del worktree."""
+    cuerpo = re.sub(r"\A\s*\+\+\+\n.*?\n\+\+\+\n", "", texto_encargo, flags=re.S).strip()
+    return ("Cargá la skill `delegacion-opencode` y seguila al pie de la letra. Tu encargo está abajo. "
+            f"Trabajá solo en el worktree {wt} (ya está creado y es tu directorio actual). "
+            "No leas ni escribas fuera de él. Al terminar dejá REPORTE.md en la raíz del worktree.\n\n"
+            f"--- ENCARGO ---\n{cuerpo}")
 
 
 def despachar(ruta_encargo: Path, dry_run: bool = False) -> dict:
-    cfg = parsear_encargo(ruta_encargo.read_text(encoding="utf-8"))
+    texto = ruta_encargo.read_text(encoding="utf-8")
+    cfg = parsear_encargo(texto)
     repo = Path(cfg["repo"]).expanduser()
     if not (repo / ".git").exists():
         raise ValueError(f"{repo} no es un repo git")
@@ -146,14 +150,14 @@ def despachar(ruta_encargo: Path, dry_run: bool = False) -> dict:
     estado.update(rama=rama, worktree=str(wt), reutilizado=reutilizado)
     if dry_run:
         estado["resultado"] = "dry_run"
-        estado["mensaje"] = mensaje_para_opencode(ruta_encargo, wt)
+        estado["mensaje"] = mensaje_para_opencode(texto, wt)
         return estado
 
     log_oraculo = run / "oraculo.log"
     estado["oraculo_antes"] = correr_oraculo(cfg["oraculo"], wt, repo, log_oraculo)
 
     cmd = ["opencode", "run", "--agent", cfg["agente"], "--dir", str(wt), "--format", "json",
-           "--title", f"enc-{cfg['id']}-r{ronda}", mensaje_para_opencode(ruta_encargo, wt)]
+           "--title", f"enc-{cfg['id']}-r{ronda}", mensaje_para_opencode(texto, wt)]
     logger.info("lanzando: %s", shlex.join(cmd[:8]))
     t0, timeout, rc = time.time(), False, 0
     with (run / "opencode.jsonl").open("w", encoding="utf-8") as out, \

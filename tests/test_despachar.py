@@ -38,6 +38,14 @@ class TestParseo(unittest.TestCase):
             d.parsear_encargo(ENCARGO.replace("tests-nucleo", "../x"))
 
 
+class TestMensaje(unittest.TestCase):
+    def test_incrusta_cuerpo_sin_bloque_toml(self):
+        m = d.mensaje_para_opencode(ENCARGO, Path("/tmp/wt"))
+        self.assertIn("# Encargo 001", m)
+        self.assertNotIn("+++", m)
+        self.assertNotIn("oraculo =", m)
+
+
 class TestAlcance(unittest.TestCase):
     def test_dentro(self):
         self.assertEqual(d.fuera_de_alcance(["tests/test_a.py", "tests/sub/test_b.py"], ["tests/**"]), [])
