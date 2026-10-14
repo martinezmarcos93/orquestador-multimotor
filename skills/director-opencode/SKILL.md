@@ -21,7 +21,7 @@ Reglas de calibre y de obediencia: `delegacion-opencode` y `_metodologias/claude
    +++
    id = "001"
    proyecto = "mercado-sandbox"
-   repo = "/home/marcos/src/mercado-sandbox"
+   repo = "/home/usuario/src/mercado-sandbox"
    agente = "tester"
    tema = "tests-nucleo"
    base = "main"

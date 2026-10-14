@@ -144,6 +144,12 @@ Probado el 2026-10-13 con un sandbox de análisis de mercado y el agente `tester
 
 ---
 
+## Qué sigue
+
+Las ideas rescatadas de proyectos similares, convertidas en cambios concretos y ordenadas por impacto, están en [`docs/propuestas.md`](docs/propuestas.md).
+
+---
+
 ## Calibre y límites
 
 Solo se delega trabajo de bajo calibre: sin secretos, sin dinero ni datos de terceros. Los modelos gratuitos pueden usar los prompts para entrenar. El trabajador nunca hace push a `main` ni merge, y el despachador verifica que `main` quedó intacto.
