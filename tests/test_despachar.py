@@ -91,6 +91,28 @@ class TestEntornos(unittest.TestCase):
         self.assertNotIn("/tmp/demo", m)
 
 
+class TestRevision(unittest.TestCase):
+    def _evento(self, texto):
+        import json
+        return json.dumps({"type": "text", "part": {"type": "text", "text": texto}})
+
+    def test_toma_la_respuesta_final_con_hallazgos(self):
+        final = "## Veredicto\nCON_OBSERVACIONES\n\n## Hallazgos\n- [ALTA] a.py:3 — x\n- [BAJA] b.py:1 — y"
+        lineas = [self._evento("Voy a mirar el diff"), "no es json", self._evento(final), self._evento("Listo")]
+        self.assertEqual(d.texto_final_de_eventos(lineas), final)
+
+    def test_resumen_cuenta_niveles(self):
+        r = d.resumir_revision("## Veredicto\nCON_OBSERVACIONES\n\n## Hallazgos\n- [ALTA] a:1 — x\n- [MEDIA] b:2 — y\n- [MEDIA] c:3 — z")
+        self.assertEqual((r["veredicto"], r["altas"], r["medias"], r["bajas"]), ("CON_OBSERVACIONES", 1, 2, 0))
+
+    def test_sin_hallazgos(self):
+        r = d.resumir_revision("## Veredicto\nAPTO\n\n## Hallazgos\n- ninguno")
+        self.assertEqual((r["veredicto"], r["altas"]), ("APTO", 0))
+
+    def test_cuerpo_sin_bloque(self):
+        self.assertTrue(d.cuerpo_encargo(ENCARGO).startswith("# Encargo 001"))
+
+
 class TestAlcance(unittest.TestCase):
     def test_dentro(self):
         self.assertEqual(d.fuera_de_alcance(["tests/test_a.py", "tests/sub/test_b.py"], ["tests/**"]), [])

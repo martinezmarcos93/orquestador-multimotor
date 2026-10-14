@@ -156,15 +156,81 @@ def enlazar_entornos(repo: Path, wt: Path) -> list[str]:
     return enlazados
 
 
+def cuerpo_encargo(texto: str) -> str:
+    """El encargo sin su bloque de configuración +++ ... +++."""
+    return re.sub(r"\A\s*\+\+\+\n.*?\n\+\+\+\n", "", texto, flags=re.S).strip()
+
+
 def mensaje_para_opencode(texto_encargo: str, wt: Path, repo: Path | None = None) -> str:
     """El encargo va incrustado: OpenCode desatendido rechaza leer rutas fuera del worktree."""
-    cuerpo = re.sub(r"\A\s*\+\+\+\n.*?\n\+\+\+\n", "", texto_encargo, flags=re.S).strip()
+    cuerpo = cuerpo_encargo(texto_encargo)
     if repo:
         cuerpo = cuerpo.replace(str(repo), str(wt))
     return ("Cargá la skill `delegacion-opencode` y seguila al pie de la letra. Tu encargo está abajo. "
             f"Trabajá solo en el worktree {wt} (ya está creado y es tu directorio actual). "
             "No leas ni escribas fuera de él. Al terminar dejá REPORTE.md en la raíz del worktree.\n\n"
             f"--- ENCARGO ---\n{cuerpo}")
+
+
+def texto_final_de_eventos(lineas) -> str:
+    """Texto de la respuesta final del agente a partir del stream --format json de OpenCode."""
+    textos = []
+    for linea in lineas:
+        try:
+            parte = json.loads(linea).get("part", {})
+        except json.JSONDecodeError:
+            continue
+        if parte.get("type") == "text" and parte.get("text", "").strip():
+            textos.append(parte["text"].strip())
+    for t in reversed(textos):
+        if "## Hallazgos" in t:
+            return t
+    return "\n\n".join(textos)
+
+
+def resumir_revision(texto: str) -> dict:
+    niveles = {n.lower() + "s": len(re.findall(rf"^\s*-\s*\[{n}\]", texto, re.M)) for n in ("ALTA", "MEDIA", "BAJA")}
+    m = re.search(r"## Veredicto\s*\n+\s*(\w+)", texto)
+    return {"veredicto": m.group(1) if m else None, **niveles}
+
+
+def revisar(cfg: dict, texto_encargo: str, wt: Path, run: Path, base_ref: str) -> dict:
+    """Etapa del revisor (solo lectura). Si deja el worktree distinto, se reporta como error."""
+    antes = (git(wt, "rev-parse", "HEAD"), listar_sucios(wt))
+    mensaje = (f"Revisá la rama {git(wt, 'branch', '--show-current')} contra {base_ref}. Empezá con "
+               f"`git diff --stat {base_ref}..HEAD` y después `git diff {base_ref}..HEAD`.\n\n"
+               f"El encargo que cumplía el trabajador era:\n{cuerpo_encargo(texto_encargo)}\n\n"
+               "Respondé solo con el formato indicado en tus instrucciones.")
+    cmd = ["opencode", "run", "--agent", "revisor", "--dir", str(wt), "--format", "json",
+           "--title", f"rev-{cfg['id']}", mensaje]
+    with (run / "revision.jsonl").open("w", encoding="utf-8") as out, \
+         (run / "revision.err").open("w", encoding="utf-8") as err:
+        try:
+            subprocess.run(cmd, stdout=out, stderr=err, timeout=min(cfg["timeout_min"], 10) * 60,
+                           stdin=subprocess.DEVNULL)
+        except subprocess.TimeoutExpired:
+            return {"error": "el revisor excedió el tiempo"}
+    if (git(wt, "rev-parse", "HEAD"), listar_sucios(wt)) != antes:
+        return {"error": "el revisor modificó el worktree (es de solo lectura)"}
+    texto = texto_final_de_eventos((run / "revision.jsonl").read_text(encoding="utf-8").splitlines())
+    if not texto:
+        return {"error": "el revisor no devolvió texto", "log": str(run / "revision.err")}
+    (run / "revision.md").write_text(texto, encoding="utf-8")
+    return {"archivo": str(run / "revision.md"), **resumir_revision(texto)}
+
+
+def revisar_solo(ruta_encargo: Path) -> dict:
+    """Corre solo el revisor sobre el worktree ya existente de un encargo."""
+    texto = ruta_encargo.read_text(encoding="utf-8")
+    cfg = parsear_encargo(texto)
+    repo = Path(cfg["repo"]).expanduser()
+    wt = SRC / f"{cfg['proyecto']}-{cfg['tema']}"
+    if not wt.exists():
+        raise ValueError(f"no existe el worktree {wt}")
+    run = RUNS / f"{cfg['proyecto']}-{cfg['id']}" / "revision-manual"
+    run.mkdir(parents=True, exist_ok=True)
+    return {"id": cfg["id"], "proyecto": cfg["proyecto"], "resultado": "revision_manual",
+            "revision": revisar(cfg, texto, wt, run, git(repo, "rev-parse", cfg["base"]))}
 
 
 def despachar(ruta_encargo: Path, dry_run: bool = False) -> dict:
@@ -194,6 +260,10 @@ def despachar(ruta_encargo: Path, dry_run: bool = False) -> dict:
 
     log_oraculo = run / "oraculo.log"
     estado["oraculo_antes"] = correr_oraculo(cfg["oraculo"], wt, repo, log_oraculo)
+    if cfg.get("exige_baseline_verde") and not estado["oraculo_antes"]:
+        estado["resultado"] = "baseline_rojo"
+        estado["nota"] = "este encargo exige baseline verde para poder probar que no cambió el comportamiento"
+        return estado
 
     cmd = ["opencode", "run", "--agent", cfg["agente"], "--dir", str(wt), "--format", "json",
            "--title", f"enc-{cfg['id']}-r{ronda}", mensaje_para_opencode(texto, wt, repo)]
@@ -238,6 +308,9 @@ def despachar(ruta_encargo: Path, dry_run: bool = False) -> dict:
                                     puntaje_mutacion=(resumen_mut or {}).get("puntaje"),
                                     umbral_mutacion=(mut_cfg or {}).get("umbral", 0.0)),
     )
+    if cfg.get("revisor") and estado["resultado"] in ("pasa", "tests_debiles"):
+        logger.info("etapa de revisión (solo lectura)")
+        estado["revision"] = revisar(cfg, texto, wt, run, base_ref)
     if resumen_mut:
         estado["mutacion"] = {k: resumen_mut[k] for k in ("total", "muertos", "puntaje") if k in resumen_mut}
         estado["mutacion"]["sobrevivientes"] = resumen_mut.get("sobrevivientes", [])[:15]
@@ -250,19 +323,21 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("encargo", type=Path)
     ap.add_argument("--dry-run", action="store_true", help="prepara el worktree y muestra el mensaje, sin lanzar OpenCode")
+    ap.add_argument("--revisar-solo", action="store_true", help="corre solo el revisor sobre el worktree existente")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
     try:
-        estado = despachar(args.encargo.resolve(), args.dry_run)
+        estado = (revisar_solo(args.encargo.resolve()) if args.revisar_solo
+                  else despachar(args.encargo.resolve(), args.dry_run))
     except Exception as e:
         logger.error("no se pudo despachar: %s", e, exc_info=True)
         estado = {"resultado": "error_despachador", "error": str(e)}
-    if "proyecto" in estado and estado.get("resultado") != "tope_rondas":
+    if "proyecto" in estado and "ronda" in estado and estado.get("resultado") != "tope_rondas":
         destino = RUNS / f"{estado['proyecto']}-{estado['id']}" / f"ronda-{estado['ronda']}" / "estado.json"
         destino.write_text(json.dumps(estado, indent=2, ensure_ascii=False), encoding="utf-8")
         estado["estado_json"] = str(destino)
     print(json.dumps(estado, indent=2, ensure_ascii=False))
-    return 0 if estado.get("resultado") in ("pasa", "dry_run") else 1
+    return 0 if estado.get("resultado") in ("pasa", "dry_run", "revision_manual") else 1
 
 
 if __name__ == "__main__":
