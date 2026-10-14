@@ -46,6 +46,32 @@ class TestMensaje(unittest.TestCase):
         self.assertNotIn("oraculo =", m)
 
 
+class TestEntornos(unittest.TestCase):
+    def test_enlaza_venv_y_lo_excluye_de_git(self):
+        import subprocess, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            run = lambda *a, cwd=repo: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a],
+                                                      cwd=cwd, check=True, capture_output=True)
+            run("init", "-q", "-b", "main")
+            (repo / ".venv").mkdir()
+            (repo / "a.txt").write_text("x", encoding="utf-8")
+            run("add", "a.txt")
+            run("commit", "-qm", "base")
+            wt = Path(tmp) / "wt"
+            run("worktree", "add", str(wt), "-b", "opencode/x", "main")
+            self.assertEqual(d.enlazar_entornos(repo, wt), [".venv"])
+            self.assertTrue((wt / ".venv").is_symlink())
+            self.assertEqual(d.git(wt, "status", "--porcelain"), "")
+            self.assertEqual(d.enlazar_entornos(repo, wt), [])
+
+    def test_mensaje_reemplaza_ruta_del_repo(self):
+        m = d.mensaje_para_opencode(ENCARGO + "\nusar /tmp/demo/.venv/bin/python", Path("/tmp/wt"), Path("/tmp/demo"))
+        self.assertIn("/tmp/wt/.venv/bin/python", m)
+        self.assertNotIn("/tmp/demo", m)
+
+
 class TestAlcance(unittest.TestCase):
     def test_dentro(self):
         self.assertEqual(d.fuera_de_alcance(["tests/test_a.py", "tests/sub/test_b.py"], ["tests/**"]), [])

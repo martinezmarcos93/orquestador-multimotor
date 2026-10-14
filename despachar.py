@@ -119,9 +119,32 @@ def preparar_worktree(cfg: dict, repo: Path) -> tuple[Path, str, bool]:
     return wt, rama, False
 
 
-def mensaje_para_opencode(texto_encargo: str, wt: Path) -> str:
+ENTORNOS = (".venv", "node_modules")
+
+
+def enlazar_entornos(repo: Path, wt: Path) -> list[str]:
+    """Un worktree no trae .venv/node_modules (ignorados por git): se enlazan y se excluyen del status."""
+    enlazados = []
+    excluir = Path(git(wt, "rev-parse", "--git-path", "info/exclude"))
+    excluir = excluir if excluir.is_absolute() else wt / excluir
+    excluir.parent.mkdir(parents=True, exist_ok=True)
+    previo = excluir.read_text(encoding="utf-8") if excluir.exists() else ""
+    for nombre in ENTORNOS:
+        if (repo / nombre).exists() and not (wt / nombre).exists():
+            (wt / nombre).symlink_to(repo / nombre)
+            enlazados.append(nombre)
+            if f"/{nombre}" not in previo.splitlines():
+                previo += f"/{nombre}\n"
+    if enlazados:
+        excluir.write_text(previo, encoding="utf-8")
+    return enlazados
+
+
+def mensaje_para_opencode(texto_encargo: str, wt: Path, repo: Path | None = None) -> str:
     """El encargo va incrustado: OpenCode desatendido rechaza leer rutas fuera del worktree."""
     cuerpo = re.sub(r"\A\s*\+\+\+\n.*?\n\+\+\+\n", "", texto_encargo, flags=re.S).strip()
+    if repo:
+        cuerpo = cuerpo.replace(str(repo), str(wt))
     return ("Cargá la skill `delegacion-opencode` y seguila al pie de la letra. Tu encargo está abajo. "
             f"Trabajá solo en el worktree {wt} (ya está creado y es tu directorio actual). "
             "No leas ni escribas fuera de él. Al terminar dejá REPORTE.md en la raíz del worktree.\n\n"
@@ -147,17 +170,17 @@ def despachar(ruta_encargo: Path, dry_run: bool = False) -> dict:
 
     sha_base_main = git(repo, "rev-parse", cfg["base"])
     wt, rama, reutilizado = preparar_worktree(cfg, repo)
-    estado.update(rama=rama, worktree=str(wt), reutilizado=reutilizado)
+    estado.update(rama=rama, worktree=str(wt), reutilizado=reutilizado, entornos_enlazados=enlazar_entornos(repo, wt))
     if dry_run:
         estado["resultado"] = "dry_run"
-        estado["mensaje"] = mensaje_para_opencode(texto, wt)
+        estado["mensaje"] = mensaje_para_opencode(texto, wt, repo)
         return estado
 
     log_oraculo = run / "oraculo.log"
     estado["oraculo_antes"] = correr_oraculo(cfg["oraculo"], wt, repo, log_oraculo)
 
     cmd = ["opencode", "run", "--agent", cfg["agente"], "--dir", str(wt), "--format", "json",
-           "--title", f"enc-{cfg['id']}-r{ronda}", mensaje_para_opencode(texto, wt)]
+           "--title", f"enc-{cfg['id']}-r{ronda}", mensaje_para_opencode(texto, wt, repo)]
     logger.info("lanzando: %s", shlex.join(cmd[:8]))
     t0, timeout, rc = time.time(), False, 0
     with (run / "opencode.jsonl").open("w", encoding="utf-8") as out, \
