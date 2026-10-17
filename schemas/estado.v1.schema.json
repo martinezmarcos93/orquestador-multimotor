@@ -457,6 +457,16 @@
         "null"
       ],
       "minimum": 0
+    },
+    "motor": {
+      "type": "string",
+      "enum": [
+        "opencode",
+        "codex"
+      ]
+    },
+    "rc_worker": {
+      "type": "integer"
     }
   },
   "additionalProperties": true
