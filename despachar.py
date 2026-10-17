@@ -747,9 +747,13 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         else:
             etapa(run, "oráculo (antes)")
             estado["oraculo_antes"] = correr_oraculo(cfg["oraculo"], wt, repo, log_oraculo, timeout_s=cfg["timeout_min"] * 60)
-            if cfg.get("exige_baseline_verde") and not estado["oraculo_antes"]:
+            if (cfg.get("exige_baseline_verde") or cfg.get("espera_rojo")) and not estado["oraculo_antes"]:
                 estado["resultado"] = "baseline_rojo"
-                estado["nota"] = "este encargo exige baseline verde para poder probar que no cambió el comportamiento"
+                estado["nota"] = (
+                    "el encargo test-first requiere un baseline verde antes de agregar pruebas"
+                    if cfg.get("espera_rojo")
+                    else "este encargo exige baseline verde para poder probar que no cambió el comportamiento"
+                )
                 return estado
 
             etapa(run, f"OpenCode trabajando (máx {cfg['timeout_min']} min)")
@@ -786,6 +790,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
             estado["oraculo_despues_omitido"] = "viola_inmutables"
         else:
             etapa(run, "oráculo (después) y verificación de alcance")
+            offset_oraculo_despues = log_oraculo.stat().st_size if log_oraculo.exists() else 0
             oraculo_despues = correr_oraculo(
                 cfg["oraculo"], wt, repo, log_oraculo, timeout_s=cfg["timeout_min"] * 60
             )
@@ -806,6 +811,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
             (run / "mutacion.json").write_text(json.dumps(resumen_mut, indent=2, ensure_ascii=False), encoding="utf-8")
         head_fin = git(wt, "rev-parse", "HEAD")
         base_sha_fin = git(repo, "rev-parse", cfg["base"])
+        secreto_detectado = posible_secreto(añadidas)
         estado.update(
             commits=commits, archivos=sorted(cambiados), fuera_de_alcance=fuera,
             archivos_inmutables=protegidos, sin_commitear=sucios,
@@ -817,7 +823,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
             main_intacto=base_sha_fin == sha_base_main,
             resultado=decidir_resultado(timeout=timeout, rc_opencode=rc, commits=commits, sucios=sucios,
                                         fuera=fuera, oraculo_ok=oraculo_ok, dependencias=dependencias,
-                                        secretos=posible_secreto(añadidas), inmutables=protegidos,
+                                        secretos=secreto_detectado, inmutables=protegidos,
                                         puntaje_mutacion=(resumen_mut or {}).get("puntaje"),
                                         umbral_mutacion=(mut_cfg or {}).get("umbral", 0.0),
                                         error_mutacion=bool((resumen_mut or {}).get("error")),
@@ -826,6 +832,21 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                                             and resumen_mut.get("total", 0) == 0
                                         )),
         )
+        if cfg.get("espera_rojo") and rc == 0 and estado["resultado"] in ("pasa", "falla_oraculo"):
+            archivos_test = [a for a in cambiados if a.startswith(("tests/", "test/"))]
+            texto_oraculo_despues = ""
+            if log_oraculo.exists():
+                texto_oraculo_despues = log_oraculo.read_text(encoding="utf-8")[offset_oraculo_despues:]
+            marcadores_ok = all(m in texto_oraculo_despues for m in cfg["espera_rojo_contiene"])
+            if estado["resultado"] == "falla_oraculo" and archivos_test and marcadores_ok:
+                estado["resultado"] = "tests_preparados"
+                estado["nota"] = "el baseline era verde y las pruebas nuevas fallan con los marcadores esperados"
+            elif estado["resultado"] == "pasa":
+                estado["resultado"] = "tests_no_fallan"
+                estado["nota"] = "las pruebas agregadas no producen el fallo esperado antes de implementar"
+            else:
+                estado["resultado"] = "tests_rojos_sin_evidencia"
+                estado["nota"] = "el oráculo falla, pero no se confirmaron las rutas de test y los marcadores esperados"
         if estado["resultado"] == "pasa":
             etapa(run, "vista previa de integración (solo lectura)")
             estado["integracion_previa"] = previsualizar_integracion(repo, base_sha_fin, head_fin)
