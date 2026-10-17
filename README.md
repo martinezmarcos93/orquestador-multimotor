@@ -66,9 +66,11 @@ No tiene dependencias externas: solo la librería estándar.
    python3 despachar.py ENCARGO.md --reevaluar      # repite oráculo, alcance, mutación y revisor sin lanzar OpenCode
    python3 despachar.py ENCARGO.md --revisar-solo   # solo el revisor, sobre el worktree existente
    python3 despachar.py ENCARGO.md --visor          # un panel por corrida en Herdr (si corrés dentro de Herdr)
+   python3 historial.py --por agente              # resume resultados y tokens conocidos desde el ledger
    ```
 
 La CLI valida automáticamente repo, referencia base, tipos de configuración y agentes instalados antes de despachar o revisar. `--validar` no crea worktree ni ejecuta oráculos o modelos. Los oráculos tienen un timeout por comando y, al agotarse, se termina su grupo de procesos. Un worktree reutilizado con cambios sin commitear se bloquea para evitar mezclar trabajo anterior.
+Cada corrida añade un registro compacto a `runs/historial.jsonl`. El uso se extrae de eventos `step-finish` presentes en JSONL; si faltan datos, se muestran como desconocidos y no como cero. El ledger no guarda prompts ni diffs.
    ```
 
 4. **Leé el veredicto** en `runs/<proyecto>-<id>/ronda-N/estado.json`, revisá el diff y decidí. Si el resultado es `pasa`, la vista previa `integracion_previa` informa si la combinación con la base actual parece limpia o tiene conflictos; es solo lectura y no hace merge.
@@ -128,6 +130,8 @@ orquestador-opencode/
 ├── despachar.py                 # despachador: un encargo → un veredicto
 ├── cola.py                      # varios encargos en paralelo (2-3), sin pisarse
 ├── mutacion.py                  # prueba de mutación para Python (AST, sin dependencias)
+├── uso.py                       # suma tokens reportados por eventos JSONL de OpenCode
+├── historial.py                 # ledger append-only y resumen por agente/resultado/proyecto
 ├── visor.py / ver.py            # panel opcional en Herdr y su formateador en vivo
 ├── instalar.sh                  # instala agentes y skill
 ├── agents/                      # trabajadores de OpenCode
