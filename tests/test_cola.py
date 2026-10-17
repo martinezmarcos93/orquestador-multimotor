@@ -69,6 +69,11 @@ class TestAprobacionFinal(unittest.TestCase):
     def test_sin_revision_requerida_puede_cerrar_si_pasa(self):
         self.assertTrue(cola.todos_aprobados([{"resultado": "pasa"}]))
 
+
+    def test_etapa_tests_preparados_es_intermedia_y_aprobada(self):
+        self.assertTrue(cola.todos_aprobados([{"resultado": "tests_preparados"}]))
+        self.assertFalse(cola.todos_aprobados([{"resultado": "tests_no_fallan"}]))
+
     def test_revision_con_observaciones_bloquea_exito_de_cola(self):
         self.assertFalse(cola.todos_aprobados([
             {"resultado": "pasa", "aprobacion": "con_observaciones"}
