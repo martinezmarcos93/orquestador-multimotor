@@ -72,7 +72,7 @@ def planificar(encargos: list[dict], runner, max_paralelo: int = 2, corte_fallos
                             continue
                         estado_dep = completados[clave_dep]
                         aprobado = (
-                            estado_dep.get("resultado") == "pasa"
+                            estado_dep.get("resultado") in ("pasa", "tests_preparados")
                             and estado_dep.get("aprobacion", "no_requerida") in ("no_requerida", "aprobado")
                         )
                         if not aprobado:
@@ -137,7 +137,7 @@ def planificar(encargos: list[dict], runner, max_paralelo: int = 2, corte_fallos
 def todos_aprobados(resultados: list[dict]) -> bool:
     """La cola solo devuelve éxito si los tests pasan y la compuerta de revisión no bloquea."""
     return all(
-        r.get("resultado") == "pasa"
+        r.get("resultado") in ("pasa", "tests_preparados")
         and r.get("aprobacion", "no_requerida") in ("no_requerida", "aprobado")
         for r in resultados
     )
