@@ -863,6 +863,8 @@ class TestCodexRunner(unittest.TestCase):
         self.assertEqual(comando[comando.index("--sandbox") + 1], "workspace-write")
         self.assertEqual(comando[comando.index("--ask-for-approval") + 1], "never")
         self.assertIn("--json", comando)
+        self.assertIn("sandbox_workspace_write.writable_roots=[]", comando)
+        self.assertIn("sandbox_workspace_write.network_access=false", comando)
 
     def test_mensaje_codex_incluye_rol_sin_frontmatter_de_opencode(self):
         import tempfile
