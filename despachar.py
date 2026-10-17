@@ -745,12 +745,21 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         fuera = fuera_de_alcance(sorted(cambiados), cfg["permitidos"])
         protegidos = violaciones_inmutables(sorted(cambiados), cfg.get("inmutables", []))
         dependencias = sorted(a for a in cambiados if es_archivo_dependencias(a))
-        etapa(run, "oráculo (después) y verificación de alcance")
-        oraculo_ok = correr_oraculo(cfg["oraculo"], wt, repo, log_oraculo, timeout_s=cfg["timeout_min"] * 60)
+        if protegidos:
+            etapa(run, "oráculo omitido: se violó un patrón inmutable")
+            oraculo_despues = None
+            oraculo_ok = False
+            estado["oraculo_despues_omitido"] = "viola_inmutables"
+        else:
+            etapa(run, "oráculo (después) y verificación de alcance")
+            oraculo_despues = correr_oraculo(
+                cfg["oraculo"], wt, repo, log_oraculo, timeout_s=cfg["timeout_min"] * 60
+            )
+            oraculo_ok = oraculo_despues
 
         mut_cfg = cfg.get("mutacion")
         resumen_mut = None
-        if mut_cfg and commits and oraculo_ok and not fuera and not sucios:
+        if mut_cfg and commits and oraculo_ok and not fuera and not sucios and not protegidos:
             etapa(run, "prueba de mutación")
             logger.info("prueba de mutación sobre %s", mut_cfg["archivos"])
             try:
@@ -766,7 +775,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         estado.update(
             commits=commits, archivos=sorted(cambiados), fuera_de_alcance=fuera,
             archivos_inmutables=protegidos, sin_commitear=sucios,
-            dependencias_tocadas=dependencias, oraculo_despues=oraculo_ok,
+            dependencias_tocadas=dependencias, oraculo_despues=oraculo_despues,
             reporte=(wt / "REPORTE.md").exists(), rc_opencode=rc,
             head_sha_fin=head_fin,
             base_sha_actual_fin=base_sha_fin,
