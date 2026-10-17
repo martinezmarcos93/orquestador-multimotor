@@ -6,7 +6,7 @@ Detalle, decisiones de diseño y criterios de aceptación en [`docs/propuestas.m
 
 ## Requisito rector: autonomía supervisada
 
-El objetivo operativo es reducir al mínimo la intervención de Marcos sin ampliar permisos de forma indiscriminada. Claude debe poder dirigir el ciclo de trabajo y resolver operaciones rutinarias dentro de una política explícita; las acciones fuera de alcance se deniegan por defecto. Este repositorio controla el despachador de OpenCode, no necesariamente las solicitudes de permiso de la aplicación Codex: esa integración debe investigarse por separado y no declararse resuelta solo por cambiar la política de OpenCode.
+El objetivo operativo es reducir al mínimo la intervención de Marcos sin ampliar permisos de forma indiscriminada. Claude debe poder dirigir el ciclo de trabajo y resolver operaciones rutinarias dentro de una política explícita; las acciones fuera de alcance se deniegan por defecto. Este repositorio ahora incluye un modo optativo `motor = "codex"` que lanza Codex CLI con `--sandbox workspace-write --ask-for-approval never`; evita prompts interactivos y deja que el sandbox bloquee operaciones fuera de su alcance. No controla una sesión abierta manualmente en Codex Desktop/IDE ni aprueba acciones fuera del sandbox; esa vía debe ejecutarse mediante el despachador para beneficiarse de esta política.
 
 Orden de implementación: controles preventivos y preview → trazabilidad y estados → contratos/dependencias de tareas → política de permisos y recuperación → aislamiento de sistema operativo → presupuesto/cooldown → cola desatendida. La autonomía nocturna queda bloqueada hasta demostrar aislamiento y recuperación ante interrupciones.
 
@@ -35,6 +35,9 @@ Prioridad transversal: abordar antes de ampliar la autonomía.
   - Aceptación pendiente: probar una corrida real de cola que alcance el timeout exterior y revisar la recuperación ante interrupciones; el timeout de OpenCode directo todavía requiere validación de integración.
 - [ ] **S0.5 Endurecer controles de alcance y secretos.** Implementación parcial en esta rama: el detector cubre más formatos de tokens y asignaciones de credenciales, incluso claves JSON, y la lista de dependencias reconoce manifiestos/lockfiles comunes de Python, Node, Rust, Go, Ruby, PHP, JVM, Swift y Dart. Las pruebas sintéticas de secretos y dependencias pasan en GitHub Actions run #60. Son filtros heurísticos, no garantía de ausencia de secretos ni catálogo exhaustivo.
   - Aceptación pendiente: revisar falsos positivos/negativos y documentar excepciones por ecosistema.
+
+- [ ] **S0.6 Codex CLI sin prompts rutinarios.** Implementación inicial: `motor = "codex"` invoca `codex exec --sandbox workspace-write --ask-for-approval never --json -`, inyecta las instrucciones del rol local y aplica timeout con terminación del grupo. El modo es optativo; OpenCode sigue siendo el predeterminado. Se rechaza `presupuesto_tokens` en Codex hasta implementar un parser de su stream de uso. GitHub Actions run [#398](https://github.com/martinezmarcos93/orquestador-opencode/actions/runs/39078431122) aprobó 163 tests.
+  - Aceptación pendiente: probar con Codex CLI instalado en el equipo anfitrión que edita y ejecuta tests dentro del worktree sin pedir aprobación, y que una acción fuera del sandbox falla sin prompt. No afecta sesiones de Codex Desktop/IDE abiertas manualmente.
 
 ## Fase 1 — Mantenimiento reproducible y trazabilidad básica
 
