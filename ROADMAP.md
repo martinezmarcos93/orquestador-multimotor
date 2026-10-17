@@ -4,6 +4,12 @@ Detalle, decisiones de diseño y criterios de aceptación en [`docs/propuestas.m
 
 **Método de trabajo:** un incremento por vez; rama temporal única; tests automatizados y prueba en vivo cuando sea posible; documentar evidencia, bloqueos y lo que no pudo ejecutarse. `main` es la fuente de verdad y no se modifica durante esta etapa. No marcar un ítem como hecho por haber escrito el código: debe cumplir su criterio de aceptación. No integrar ni fusionar sin autorización explícita de Marcos.
 
+## Requisito rector: autonomía supervisada
+
+El objetivo operativo es reducir al mínimo la intervención de Marcos sin ampliar permisos de forma indiscriminada. Claude debe poder dirigir el ciclo de trabajo y resolver operaciones rutinarias dentro de una política explícita; las acciones fuera de alcance se deniegan por defecto. Este repositorio controla el despachador de OpenCode, no necesariamente las solicitudes de permiso de la aplicación Codex: esa integración debe investigarse por separado y no declararse resuelta solo por cambiar la política de OpenCode.
+
+Orden de implementación: controles preventivos y preview → trazabilidad y estados → contratos/dependencias de tareas → política de permisos y recuperación → aislamiento de sistema operativo → presupuesto/cooldown → cola desatendida. La autonomía nocturna queda bloqueada hasta demostrar aislamiento y recuperación ante interrupciones.
+
 ## Hecho (2026-10-13; según documentación existente)
 
 - [x] Despachador de encargos con límite de rondas.
@@ -36,8 +42,8 @@ Prioridad transversal: abordar antes de ampliar la autonomía.
   - Aceptación pendiente: ejecutar un `--dry-run` con un encargo real en el equipo anfitrión para confirmar rutas y permisos locales.
 - [ ] **P1 Historial y registro de uso.** Añadir `uso.py`, ledger append-only `runs/historial.jsonl` y `historial.py`; parsear tokens por paso, duración, rol, veredicto y puntuación de mutación. Identificar modelo solo si el stream o una fuente local lo confirma.
   - Aceptación: tras tres encargos, los totales cuadran con sus estados; campos no disponibles se registran como desconocidos, no se inventan.
-- [ ] **P3 Archivos inmutables.** Añadir `inmutables` al encargo y veredicto `viola_inmutables`; detectar modificaciones, borrados, renombres y archivos nuevos dentro de patrones protegidos.
-  - Aceptación: el implementador no puede cambiar tests protegidos ni hacer que el cambio sea aceptado.
+- [ ] **P3 Archivos inmutables.** Implementación inicial en `docs/roadmap-hardening`: `inmutables` es opcional, valida patrones relativos y genera `viola_inmutables` si cualquier ruta cambiada coincide; `git diff --no-renames` evita ocultar el origen/destino de renombres. Se agregaron tests de parseo, traversal, coincidencia y prioridad del veredicto. CI pendiente para este incremento; no se marca completo hasta que pase.
+  - Aceptación: CI verde; probar en un repo sintético modificación, borrado y renombre de rutas protegidas y confirmar que no se aprueban.
 - [ ] **S1.1 Contrato de mutación y lectura de resultados.** Avance parcial: la evaluación de mutación que devuelve error o cero candidatos ya no puede acabar en `pasa`; se distinguen `error_mutacion` y `mutacion_sin_candidatos`. Sigue pendiente mostrar con claridad universo completo/truncado, mutación equivalente probable y límites de interpretación del puntaje.
   - Aceptación: pruebas de universo truncado, cero candidatos y oráculo que falla; no presentar el puntaje como porcentaje general de calidad.
 
@@ -47,8 +53,8 @@ Prioridad transversal: abordar antes de ampliar la autonomía.
   - Aceptación pendiente: validar todas las propiedades del esquema con herramienta compatible, completar fases/comandos/evidencias y cubrir cada veredicto con pruebas.
 - [ ] **P4 Validador de encargos (`--validar`).** Comprueba tipos, patrones relativos sin traversal, mutación, repo/base, agentes requeridos, rutas absolutas externas en el cuerpo, límite de 30.000 caracteres y el ejecutable inicial de cada comando cuando puede inferirse. La CLI aplica el preflight antes del despacho/revisión; no crea worktree ni ejecuta el oráculo/modelo. Los encargos de `higiene` requieren `exige_baseline_verde = true`. Los comandos complejos de shell se advierten, no se declaran verificados. GitHub Actions run #227 aprobó 122 tests para el código de esta tanda.
   - Aceptación pendiente: probar encargos históricos representativos y ejecutar `--validar` con la instalación real. Si se exige baseline verde, el oráculo se comprueba durante el despacho real, no en `--validar`.
-- [ ] **P7 Vista previa de integración.** Calcular conflictos de forma de solo lectura contra la base de destino actual, separando esa referencia de `base_sha`.
-  - Aceptación: conflicto sintético aparece en el estado; no se realiza merge ni se modifica la rama de destino.
+- [ ] **P7 Vista previa de integración.** Implementación inicial en `docs/roadmap-hardening`: al obtener `pasa`, ejecuta `git merge-tree --write-tree` contra el SHA actual de la base y el HEAD de trabajo; registra `integracion_previa` como `limpia`, `conflictos` o `error`. `siguiente_accion` explica cómo actuar ante conflictos o fallos. La operación es de solo lectura; CI pendiente.
+  - Aceptación: CI verde; los tests sintéticos comprueban integración limpia, conflicto reproducible y que HEAD/worktree de destino no cambian.
 
 ## Fase 3 — Calidad y eficiencia de la delegación
 
