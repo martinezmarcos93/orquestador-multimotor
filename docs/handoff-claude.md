@@ -56,3 +56,28 @@ Link de ejecución reciente a revisar: https://github.com/martinezmarcos93/orque
 ## Criterio para cerrar la PR
 
 No cerrar por cantidad de tests solamente. Cerrar los criterios de aceptación con evidencia de CI y del equipo anfitrión, actualizar el roadmap y pedir revisión humana de los riesgos de seguridad. La PR debe seguir abierta hasta autorización explícita de Marcos para integrar.
+
+
+## Continuación del barrido de autonomía (2026-10-17)
+
+Rama de trabajo única: `docs/roadmap-hardening`. No crear ramas auxiliares, no tocar `main` ni fusionar sin autorización de Marcos.
+
+### Incremento en curso: controles preventivos
+
+- `despachar.py` acepta `inmutables = [...]`, valida que los patrones sean relativos y sin traversal, detecta rutas protegidas modificadas y emite `viola_inmutables`. La comparación de rutas usa `git diff --no-renames` para no ocultar el origen de renombres.
+- Si una entrega obtiene `pasa`, se ejecuta `git merge-tree --write-tree` contra el SHA actual de la base y el HEAD de trabajo. El resultado `integracion_previa` puede ser `limpia`, `conflictos` o `error`; la vista previa no modifica refs ni worktrees. `siguiente_accion` orienta la recuperación.
+- Se añadieron pruebas para parseo/validación de `inmutables`, prioridad del veredicto, integración limpia, conflictos y ausencia de mutaciones en el destino.
+- **Estado de validación:** cambios publicados en esta rama; el resultado de CI de este incremento todavía no está confirmado. No afirmar que las pruebas pasan hasta verificar el workflow.
+
+### Próximas unidades, en orden
+
+1. Completar pruebas de inmutables para borrado/renombre y validar CI.
+2. Historial append-only y extracción de tokens/uso solo cuando los datos estén presentes en JSONL.
+3. Completar el contrato de estado y acciones siguientes; añadir dependencias entre encargos y aceptación automatizada.
+4. Diseñar la política de permisos de OpenCode, bloqueo por defecto fuera de alcance y recuperación persistente de workers.
+5. Diseñar sandbox real del sistema operativo y comprobar home, credenciales, red y escritura fuera del worktree.
+6. Presupuesto de tokens y gestión de modelos fallidos; luego cola desatendida con recuperación tras interrupciones.
+
+### Límite de integración Codex
+
+Este repositorio lanza trabajadores OpenCode. No hay evidencia de que controle los diálogos de aprobación de la aplicación Codex mencionados en el log de Marcos. Investigar una interfaz oficial o una integración local verificable antes de afirmar que esas aprobaciones se automatizaron. No simular clics ni ampliar permisos irrestrictos como sustituto de una política acotada.
