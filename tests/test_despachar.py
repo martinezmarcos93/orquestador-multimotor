@@ -84,6 +84,16 @@ class TestParseo(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "timeout_cola_min"):
             d.parsear_encargo(texto)
 
+    def test_motor_codex_es_explicito_y_no_acepta_presupuesto_no_soportado(self):
+        texto = ENCARGO.replace("+++\n# Encargo", 'motor = "codex"\n+++\n# Encargo')
+        self.assertEqual(d.parsear_encargo(texto)["motor"], "codex")
+        invalid = ENCARGO.replace("+++\n# Encargo", 'motor = "inventado"\n+++\n# Encargo')
+        with self.assertRaisesRegex(ValueError, "motor"):
+            d.parsear_encargo(invalid)
+        con_presupuesto = texto.replace("+++\n# Encargo", 'presupuesto_tokens = 100\n+++\n# Encargo')
+        with self.assertRaisesRegex(ValueError, "no es compatible"):
+            d.parsear_encargo(con_presupuesto)
+
     def test_presupuesto_tokens_debe_ser_entero_positivo(self):
         texto = ENCARGO.replace("+++\n# Encargo", 'presupuesto_tokens = 100\n+++\n# Encargo')
         self.assertEqual(d.parsear_encargo(texto)["presupuesto_tokens"], 100)
@@ -843,6 +853,54 @@ class TestVeredicto(unittest.TestCase):
         self.assertEqual(self.v(timeout=True), "timeout")
 
 
+
+
+class TestCodexRunner(unittest.TestCase):
+    def test_comando_codex_usa_workspace_write_y_nunca_pide_aprobacion(self):
+        comando = d.comando_codex()
+        self.assertEqual(comando[:2], ["codex", "exec"])
+        self.assertIn("--sandbox", comando)
+        self.assertEqual(comando[comando.index("--sandbox") + 1], "workspace-write")
+        self.assertEqual(comando[comando.index("--ask-for-approval") + 1], "never")
+        self.assertIn("--json", comando)
+
+    def test_mensaje_codex_incluye_rol_sin_frontmatter_de_opencode(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            wt = repo / "worktree"
+            wt.mkdir()
+            prompt = d.mensaje_para_codex(ENCARGO, wt, repo, "tester")
+        self.assertIn("trabajador tester", prompt)
+        self.assertIn("SOLO escribe tests", prompt)
+        self.assertNotIn("permission:", prompt)
+        self.assertIn(str(wt), prompt)
+
+    def test_codex_runner_entrega_prompt_por_stdin_y_cumple_timeout(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            salida, error = root / "stdout.txt", root / "stderr.txt"
+            with salida.open("w", encoding="utf-8") as out, error.open("w", encoding="utf-8") as err:
+                rc, timeout = d.ejecutar_codex_con_timeout(
+                    [sys.executable, "-u", "-c", "import sys; print(sys.stdin.read())"],
+                    "prompt sintetico", cwd=root, timeout_s=3, stdout=out, stderr=err,
+                )
+            self.assertEqual(rc, 0)
+            self.assertFalse(timeout)
+            self.assertEqual(salida.read_text(encoding="utf-8").strip(), "prompt sintetico")
+
+    def test_codex_runner_termina_proceso_al_agotar_timeout(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (root / "stdout.txt").open("w", encoding="utf-8") as out, (root / "stderr.txt").open("w", encoding="utf-8") as err:
+                rc, timeout = d.ejecutar_codex_con_timeout(
+                    [sys.executable, "-u", "-c", "import time; time.sleep(10)"],
+                    "prompt", cwd=root, timeout_s=0.2, stdout=out, stderr=err,
+                )
+        self.assertEqual(rc, -1)
+        self.assertTrue(timeout)
 
 
 class TestPresupuestoTokens(unittest.TestCase):
