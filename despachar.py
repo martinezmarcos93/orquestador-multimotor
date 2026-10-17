@@ -646,8 +646,10 @@ def revisar_solo(ruta_encargo: Path) -> dict:
     run = RUNS / f"{cfg['proyecto']}-{cfg['id']}" / "revision-manual"
     run.mkdir(parents=True, exist_ok=True)
     revision = revisar(cfg, texto, wt, run, git(repo, "rev-parse", cfg["base"]))
-    return {"id": cfg["id"], "proyecto": cfg["proyecto"], "resultado": "revision_manual",
-            "revision": revision, "aprobacion": aprobar_revision(revision)}
+    return {"id": cfg["id"], "proyecto": cfg["proyecto"], "agente": cfg["agente"],
+            "resultado": "revision_manual", "run": str(run), "revision": revision,
+            "uso_revision": uso.resumir_archivo(run / "revision.jsonl"),
+            "aprobacion": aprobar_revision(revision)}
 
 
 def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: bool = False) -> dict:
