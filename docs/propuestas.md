@@ -2,7 +2,7 @@
 
 Ideas rescatadas de proyectos similares, convertidas en cambios concretos para este orquestador. Solo ideas: no se copia código ni se instala nada de terceros (varios no tienen licencia, uno es GPL-3.0, y los skills/agentes importados corren con `bash` permitido en modo desatendido).
 
-Estado al 2026-10-17: además del preflight, timeouts, worktrees y estado v1, la rama implementa una primera versión de `inmutables` y vista previa de integración con `git merge-tree --write-tree`. Los tests nuevos y la ejecución CI de este incremento están pendientes de confirmación. El entorno real de OpenCode/LiteLLM y el control de permisos de Codex quedan por validar por separado. Cada propuesta es un incremento independiente, con tests y prueba en vivo antes del siguiente.
+Estado al 2026-10-17: se implementaron `inmutables` y la vista previa de integración con `git merge-tree --write-tree`; GitHub Actions run #264 aprobó 129 tests. La integración con workers reales, OpenCode/LiteLLM y controles de permisos de Codex siguen pendientes de validar por separado. Cada propuesta es un incremento independiente, con tests y prueba en vivo antes del siguiente.
 
 ## Fuentes revisadas
 
@@ -84,7 +84,7 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 **Problema.** "No aflojar asserts" y "no tocar los tests" hoy son una instrucción en el prompt, que un modelo gratuito puede ignorar.
 
-**Implementación.** Un campo opcional `inmutables = ["tests/**"]` en el encargo. El despachador compara rutas modificadas contra la base y bloquea con `viola_inmutables`; se usa `git diff --no-renames` para detectar ambos extremos de un movimiento. Los patrones se validan como rutas relativas sin traversal. Implementación inicial en `docs/roadmap-hardening`; falta confirmar CI y ampliar pruebas de borrado/renombre.
+**Implementación.** Un campo opcional `inmutables = ["tests/**"]` en el encargo. El despachador compara rutas modificadas contra la base y bloquea con `viola_inmutables`; se usa `git diff --no-renames` para detectar ambos extremos de un movimiento. Los patrones se validan como rutas relativas sin traversal. Implementado y cubierto en CI run #264: tests sintéticos verifican modificación por patrones, borrado, renombre, traversal y bloqueo del veredicto. Pendiente probar el ciclo completo con un worker real.
 
 **Aceptación.** Un `implementador` que modifica un test existente queda rechazado sin leer el diff.
 
@@ -128,7 +128,7 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 **Origen.** Disciplina de "merge-conflict safety" de `dirigent-skills`, sin el agente que mergea.
 
-**Implementación.** Al terminar con `pasa`, `git merge-tree --write-tree <base_sha_actual> <head_sha_trabajo>` (solo lectura) registra `integracion_previa` con estado `limpia`, `conflictos` o `error`, hashes de entrada y diagnóstico. Si detecta conflictos, `siguiente_accion` pide resolverlos antes de integrar. El merge sigue siendo humano; la vista previa no modifica refs ni worktrees. Implementación inicial en `docs/roadmap-hardening`; CI pendiente.
+**Implementación.** Al terminar con `pasa`, `git merge-tree --write-tree <base_sha_actual> <head_sha_trabajo>` (solo lectura) registra `integracion_previa` con estado `limpia`, `conflictos` o `error`, hashes de entrada y diagnóstico. Si detecta conflictos, `siguiente_accion` pide resolverlos antes de integrar. El merge sigue siendo humano; la vista previa no modifica refs ni worktrees. Implementado y cubierto en CI run #264: tests sintéticos verifican integración limpia, conflicto reproducible y que HEAD/worktree de destino no cambian. Pendiente probar el flujo completo con una entrega real.
 
 ## 8. Cola nocturna con systemd
 
