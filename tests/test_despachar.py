@@ -859,9 +859,9 @@ class TestCodexRunner(unittest.TestCase):
     def test_comando_codex_usa_workspace_write_y_nunca_pide_aprobacion(self):
         comando = d.comando_codex()
         self.assertEqual(comando[:2], ["codex", "exec"])
-        self.assertIn("--sandbox", comando)
-        self.assertEqual(comando[comando.index("--sandbox") + 1], "workspace-write")
-        self.assertEqual(comando[comando.index("--ask-for-approval") + 1], "never")
+        self.assertIn("--approve-for-me", comando)
+        self.assertNotIn("--sandbox", comando)
+        self.assertNotIn("--ask-for-approval", comando)
         self.assertIn("--json", comando)
         self.assertIn("sandbox_workspace_write.writable_roots=[]", comando)
         self.assertIn("sandbox_workspace_write.network_access=false", comando)
