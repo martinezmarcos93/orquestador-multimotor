@@ -242,11 +242,11 @@ class TestDependencias(unittest.TestCase):
         self.assertEqual(next(r for r in resultados if r["id"] == "2")["resultado"], "dependencia_fallida")
 
     def test_encargo_temporal_cambia_base_sin_alterar_el_original(self):
-        texto = '+++\\nid = "2"\\nproyecto = "p"\\nrepo = "/r"\\nagente = "implementador"\\ntema = "impl"\\nbase = "main"\\npermitidos = ["src/**"]\\noraculo = ["pytest -q"]\\n+++\\n# cuerpo\\n'
+        texto = '+++\nid = "2"\nproyecto = "p"\nrepo = "/r"\nagente = "implementador"\ntema = "impl"\nbase = "main"\npermitidos = ["src/**"]\noraculo = ["pytest -q"]\n+++\n# cuerpo\n'
         nuevo = cola._texto_con_base(texto, "opencode/primero")
         self.assertIn('base = "opencode/primero"', nuevo)
         self.assertIn('base = "main"', texto)
-        sin_base = texto.replace('base = "main"\\n', "")
+        sin_base = texto.replace('base = "main"\n', "")
         nuevo_sin_base = cola._texto_con_base(sin_base, "opencode/primero")
         self.assertIn('base = "opencode/primero"', nuevo_sin_base)
 
@@ -254,14 +254,14 @@ class TestDependencias(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            base = '+++\\nid = "{id}"\\nproyecto = "p"\\nrepo = "/repo"\\nagente = "tester"\\ntema = "tema{id}"\\npermitidos = ["tests/**"]\\noraculo = ["pytest -q"]\\n{dep}+++\\n# cuerpo\\n'
+            base = '+++\nid = "{id}"\nproyecto = "p"\nrepo = "/repo"\nagente = "tester"\ntema = "tema{id}"\npermitidos = ["tests/**"]\noraculo = ["pytest -q"]\n{dep}+++\n# cuerpo\n'
             a = root / "a.md"
-            a.write_text(base.format(id="1", dep='depende_de = ["9"]\\n'), encoding="utf-8")
+            a.write_text(base.format(id="1", dep='depende_de = ["9"]\n'), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "no está en esta cola"):
                 cola.cargar([a])
-            a.write_text(base.format(id="1", dep='depende_de = ["2"]\\n'), encoding="utf-8")
+            a.write_text(base.format(id="1", dep='depende_de = ["2"]\n'), encoding="utf-8")
             b = root / "b.md"
-            b.write_text(base.format(id="2", dep='depende_de = ["1"]\\n'), encoding="utf-8")
+            b.write_text(base.format(id="2", dep='depende_de = ["1"]\n'), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "ciclo de dependencias"):
                 cola.cargar([a, b])
 
