@@ -844,6 +844,24 @@ class TestEstadoVersionado(unittest.TestCase):
         self.assertTrue(any("schema_version" in e for e in errores))
         self.assertTrue(any("zona horaria" in e for e in errores))
 
+    def test_valida_restricciones_numericas_y_objetos_anidados(self):
+        estado = d.normalizar_estado({"resultado": "pasa"}, "2026-10-14T00:00:00+00:00")
+        estado["duracion_s"] = -1
+        estado["uso"] = {"disponible": True, "entrada": -2}
+        estado["integracion_previa"] = {"estado": "indefinido"}
+        errores = d.validar_estado_v1(estado)
+        self.assertTrue(any("duracion_s" in e and "minimum" in e for e in errores), errores)
+        self.assertTrue(any("uso.entrada" in e and "minimum" in e for e in errores), errores)
+        self.assertTrue(any("integracion_previa.estado" in e and "enum" in e for e in errores), errores)
+
+    def test_no_trata_booleanos_como_enteros_y_permite_campos_futuros(self):
+        estado = d.normalizar_estado({"resultado": "pasa", "ronda": True, "campo_futuro": {"x": 1}},
+                                     "2026-10-14T00:00:00+00:00")
+        errores = d.validar_estado_v1(estado)
+        self.assertTrue(any("ronda" in e and "tipo inválido" in e for e in errores), errores)
+        estado.pop("ronda")
+        self.assertEqual(d.validar_estado_v1(estado), [])
+
     def test_schema_documenta_contrato_minimo_versionado(self):
         import json
         schema_path = Path(d.__file__).resolve().parent / "schemas" / "estado.v1.schema.json"
