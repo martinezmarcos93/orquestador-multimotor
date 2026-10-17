@@ -29,11 +29,12 @@ print(f"Python {sys.version.split()[0]}: OK")
 PY
 
 echo "== Compilación Python =="
-python3 -m py_compile despachar.py cola.py mutacion.py ver.py visor.py tests/*.py
+python3 -m py_compile despachar.py cola.py mutacion.py uso.py historial.py ver.py visor.py tests/*.py
 
 echo "== Ayuda CLI (no lanza modelos) =="
 python3 -B despachar.py --help >/dev/null
 python3 -B cola.py --help >/dev/null
+python3 -B historial.py --help >/dev/null
 
 echo "== Sintaxis shell =="
 for script in instalar.sh verificar.sh; do bash -n "$script"; done
