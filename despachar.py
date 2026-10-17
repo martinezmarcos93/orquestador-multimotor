@@ -346,6 +346,19 @@ def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: 
     return "pasa"
 
 
+def clasificar_resultado_test_first(resultado: str, rc_opencode: int, archivos: list[str],
+                                   salida_oraculo: str, marcadores: list[str]) -> tuple[str, str | None]:
+    """Acepta tests deliberadamente rojos solo si el fallo contiene evidencia declarada."""
+    if rc_opencode != 0 or resultado not in ("pasa", "falla_oraculo"):
+        return resultado, None
+    if resultado == "pasa":
+        return "tests_no_fallan", "las pruebas agregadas no producen el fallo esperado antes de implementar"
+    archivos_test = [a for a in archivos if a.startswith(("tests/", "test/"))]
+    if archivos_test and marcadores and all(m in salida_oraculo for m in marcadores):
+        return "tests_preparados", "el baseline era verde y las pruebas nuevas fallan con los marcadores esperados"
+    return "tests_rojos_sin_evidencia", "el oráculo falla, pero no se confirmaron las rutas de test y los marcadores esperados"
+
+
 def etapa(run: Path, texto: str) -> None:
     """Marcador de etapa legible para el visor (ver.py)."""
     with (run / "etapas.log").open("a", encoding="utf-8") as f:
@@ -832,21 +845,17 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                                             and resumen_mut.get("total", 0) == 0
                                         )),
         )
-        if cfg.get("espera_rojo") and rc == 0 and estado["resultado"] in ("pasa", "falla_oraculo"):
-            archivos_test = [a for a in cambiados if a.startswith(("tests/", "test/"))]
+        if cfg.get("espera_rojo"):
             texto_oraculo_despues = ""
-            if log_oraculo.exists():
+            if log_oraculo.exists() and "offset_oraculo_despues" in locals():
                 texto_oraculo_despues = log_oraculo.read_text(encoding="utf-8")[offset_oraculo_despues:]
-            marcadores_ok = all(m in texto_oraculo_despues for m in cfg["espera_rojo_contiene"])
-            if estado["resultado"] == "falla_oraculo" and archivos_test and marcadores_ok:
-                estado["resultado"] = "tests_preparados"
-                estado["nota"] = "el baseline era verde y las pruebas nuevas fallan con los marcadores esperados"
-            elif estado["resultado"] == "pasa":
-                estado["resultado"] = "tests_no_fallan"
-                estado["nota"] = "las pruebas agregadas no producen el fallo esperado antes de implementar"
-            else:
-                estado["resultado"] = "tests_rojos_sin_evidencia"
-                estado["nota"] = "el oráculo falla, pero no se confirmaron las rutas de test y los marcadores esperados"
+            resultado_test_first, nota_test_first = clasificar_resultado_test_first(
+                estado["resultado"], rc, sorted(cambiados), texto_oraculo_despues,
+                cfg["espera_rojo_contiene"],
+            )
+            estado["resultado"] = resultado_test_first
+            if nota_test_first:
+                estado["nota"] = nota_test_first
         if estado["resultado"] == "pasa":
             etapa(run, "vista previa de integración (solo lectura)")
             estado["integracion_previa"] = previsualizar_integracion(repo, base_sha_fin, head_fin)
