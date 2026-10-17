@@ -867,6 +867,9 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
 
         log_oraculo = run / "oraculo.log"
         t0, timeout, rc = time.time(), False, 0
+        presupuesto_agotado = False
+        presupuesto_no_verificable = False
+        tokens_entrada_observados = None
         if reevaluar:
             etapa(run, "reevaluación: no se vuelve a lanzar OpenCode (ni se gasta cuota ni una ronda)")
         else:
@@ -885,16 +888,36 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
             cmd = ["opencode", "run", "--agent", cfg["agente"], "--dir", str(wt), "--format", "json",
                    "--title", f"enc-{cfg['id']}-r{ronda}", mensaje_para_opencode(texto, wt, repo)]
             logger.info("lanzando: %s", shlex.join(cmd[:8]))
-            with (run / "opencode.jsonl").open("w", encoding="utf-8") as out, \
-                 (run / "opencode.err").open("w", encoding="utf-8") as err:
-                rc, timeout = ejecutar_proceso_con_timeout(
-                    cmd, cwd=wt, timeout_s=cfg["timeout_min"] * 60, stdout=out, stderr=err
+            if cfg.get("presupuesto_tokens") is not None:
+                monitor = ejecutar_opencode_con_presupuesto(
+                    cmd, cwd=wt, timeout_s=cfg["timeout_min"] * 60,
+                    salida_jsonl=run / "opencode.jsonl", salida_error=run / "opencode.err",
+                    presupuesto_tokens=cfg["presupuesto_tokens"],
                 )
+                rc = monitor["codigo_salida"]
+                timeout = monitor["timeout"]
+                presupuesto_agotado = monitor["presupuesto_agotado"]
+                presupuesto_no_verificable = monitor["presupuesto_no_verificable"]
+                tokens_entrada_observados = monitor["tokens_entrada"]
+                estado["pasos_observados"] = monitor["pasos"]
+                estado["pasos_sin_tokens"] = monitor["pasos_sin_tokens"]
+                if monitor.get("error_lector"):
+                    estado["error_lector_jsonl"] = monitor["error_lector"]
                 if timeout:
                     rc = -1
-                    logger.error("OpenCode excedió %s min; se terminó el grupo de procesos", cfg["timeout_min"])
+            else:
+                with (run / "opencode.jsonl").open("w", encoding="utf-8") as out, \
+                     (run / "opencode.err").open("w", encoding="utf-8") as err:
+                    rc, timeout = ejecutar_proceso_con_timeout(
+                        cmd, cwd=wt, timeout_s=cfg["timeout_min"] * 60, stdout=out, stderr=err
+                    )
+                    if timeout:
+                        rc = -1
+                        logger.error("OpenCode excedió %s min; se terminó el grupo de procesos", cfg["timeout_min"])
             estado["duracion_s"] = round(time.time() - t0)
             estado["uso"] = uso.resumir_archivo(run / "opencode.jsonl")
+            if tokens_entrada_observados is None:
+                tokens_entrada_observados = estado["uso"].get("entrada")
 
         base_ref = sha_base_main
         commits = int(git(wt, "rev-list", "--count", f"{base_ref}..HEAD") or 0)
@@ -938,6 +961,11 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         base_sha_fin = git(repo, "rev-parse", cfg["base"])
         secreto_detectado = posible_secreto(añadidas)
         estado.update(
+            presupuesto_tokens=cfg.get("presupuesto_tokens"),
+            tokens_entrada_observados=tokens_entrada_observados,
+            presupuesto_agotado=presupuesto_agotado,
+            presupuesto_no_verificable=presupuesto_no_verificable,
+            espera_rojo=cfg.get("espera_rojo", False), depende_de=cfg.get("depende_de", []),
             commits=commits, archivos=sorted(cambiados), fuera_de_alcance=fuera,
             archivos_inmutables=protegidos, sin_commitear=sucios,
             dependencias_tocadas=dependencias, oraculo_despues=oraculo_despues,
@@ -949,6 +977,8 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
             resultado=decidir_resultado(timeout=timeout, rc_opencode=rc, commits=commits, sucios=sucios,
                                         fuera=fuera, oraculo_ok=oraculo_ok, dependencias=dependencias,
                                         secretos=secreto_detectado, inmutables=protegidos,
+                                        presupuesto_agotado=presupuesto_agotado,
+                                        presupuesto_no_verificable=presupuesto_no_verificable,
                                         puntaje_mutacion=(resumen_mut or {}).get("puntaje"),
                                         umbral_mutacion=(mut_cfg or {}).get("umbral", 0.0),
                                         error_mutacion=bool((resumen_mut or {}).get("error")),
