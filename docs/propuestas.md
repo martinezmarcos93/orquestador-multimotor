@@ -2,7 +2,7 @@
 
 Ideas rescatadas de proyectos similares, convertidas en cambios concretos para este orquestador. Solo ideas: no se copia código ni se instala nada de terceros (varios no tienen licencia, uno es GPL-3.0, y los skills/agentes importados corren con `bash` permitido en modo desatendido).
 
-Estado al 2026-10-17: el último CI run #370 aprobó 158 tests tras los incrementos de inmutables, vista previa de integración, historial/uso, schema v1, dependencias test-first y presupuesto de tokens. La integración real con OpenCode/LiteLLM y el control de permisos de Codex siguen pendientes de validar por separado.
+Estado al 2026-10-17: el último CI run #370 aprobó 158 tests en los incrementos de inmutables, integración, ledger/uso, schema v1, cadena test-first y presupuesto. Se agregó además un backend optativo para Codex CLI sin prompts, con sandbox workspace-write; su aceptación en el equipo anfitrión sigue pendiente.
 
 ## Fuentes revisadas
 
@@ -146,6 +146,25 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 **Depende de** 1 y 6, para no gastar la cuota de golpe y saber qué pasó.
 
+## 8. Codex CLI sin prompts interactivos
+
+**Problema.** Los workers Codex pueden detenerse repetidamente esperando aprobación para leer/editar archivos dentro de su worktree. Las aprobaciones manuales vuelven al humano un operador de cada llamada.
+
+**Implementación inicial en docs/roadmap-hardening.** La configuración optativa motor = "codex" ejecuta:
+
+codex exec --sandbox workspace-write --ask-for-approval never --json -
+
+El despachador pasa las instrucciones del rol local por stdin, aplica timeout y captura JSONL/stderr. No se usan permisos globales ni un modo de acceso irrestricto. Si Codex intenta una operación fuera del sandbox, la ejecución debe fallar en vez de pedir aprobación interactiva. El backend predeterminado sigue siendo OpenCode.
+
+**Límites explícitos.**
+- Esta política solo aplica a las corridas de Codex lanzadas por el despachador; no controla una sesión abierta manualmente en Codex Desktop/IDE.
+- No convierte a Claude en aprobador de operaciones fuera del sandbox: se evita el prompt y se falla cerrado. Un futuro mecanismo de excepciones tendría que usar una API de autorización explícita y una política auditable.
+- El parser y presupuesto de tokens de OpenCode no se aplican a Codex; la combinación se rechaza en preflight hasta validar el stream de uso de Codex.
+- No se ha confirmado en el equipo anfitrión que las operaciones Git necesarias para un worktree funcionen bajo la sandbox de Codex.
+
+**Aceptación pendiente.** Con Codex CLI instalado, ejecutar una tarea de prueba en worktree, confirmar que puede editar y ejecutar tests sin prompts, verificar que no escribe fuera del worktree y comprobar que una operación bloqueada no provoca un prompt ni deja procesos huérfanos.
+
+
 ## 9. Cooldown de modelos fallidos
 
 **Problema.** Un modelo gratuito que da timeouts o respuestas vacías sigue entrando en la cadena.
@@ -156,7 +175,7 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 ## ¿Hace falta una flota de skills para mantener esto funcionando?
 
-**No.** Lo que mantiene el proyecto en pie son el código y los tests (64, corren en 5 s), y las instrucciones de cada trabajador (`agents/*.md`). Los bugs reales de esta etapa los encontraron el oráculo y el uso real, no la falta de un skill.
+**No.** Lo que mantiene el proyecto en pie son el código y los tests (158 aprobados en CI run #370), y las instrucciones de cada trabajador (`agents/*.md`). Los bugs reales de esta etapa los encontraron el oráculo y el uso real, no la falta de un skill.
 
 Un skill es un documento que el modelo carga en su contexto. Cada uno que se suma cuesta contexto y es otro texto que puede ser ambiguo, quedar desactualizado o (si viene de terceros) llevar instrucciones ajenas con acceso a una shell.
 
