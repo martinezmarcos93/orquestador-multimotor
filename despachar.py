@@ -508,73 +508,77 @@ def ejecutar_opencode_con_presupuesto(cmd: list[str], *, cwd: Path, timeout_s: f
                                        salida_jsonl: Path, salida_error: Path,
                                        presupuesto_tokens: int, gracia_s: float = 5) -> dict:
     """Captura JSONL en vivo y corta por presupuesto de tokens de entrada o timeout."""
-    proc = subprocess.Popen(
-        cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=salida_error.open("w", encoding="utf-8"),
-        stdin=subprocess.DEVNULL, start_new_session=True, text=True, encoding="utf-8", bufsize=1,
-    )
-    presupuesto_evento = threading.Event()
-    uso_desconocido_evento = threading.Event()
-    estadisticas = {"tokens_entrada": 0, "pasos": 0, "pasos_sin_tokens": 0, "error_lector": None}
+    err_file = salida_error.open("w", encoding="utf-8")
+    try:
+        proc = subprocess.Popen(
+            cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=err_file,
+            stdin=subprocess.DEVNULL, start_new_session=True, text=True, encoding="utf-8", bufsize=1,
+        )
+        presupuesto_evento = threading.Event()
+        uso_desconocido_evento = threading.Event()
+        estadisticas = {"tokens_entrada": 0, "pasos": 0, "pasos_sin_tokens": 0, "error_lector": None}
 
-    def leer_salida():
-        try:
-            with salida_jsonl.open("w", encoding="utf-8") as archivo:
-                for linea in proc.stdout:
-                    archivo.write(linea)
-                    archivo.flush()
-                    resumen = uso.resumir_stream([linea])
-                    if resumen["pasos"]:
-                        estadisticas["pasos"] += resumen["pasos"]
-                        entrada = resumen.get("entrada")
-                        if entrada is None:
-                            estadisticas["pasos_sin_tokens"] += 1
-                            uso_desconocido_evento.set()
-                        else:
-                            estadisticas["tokens_entrada"] += entrada
-                            if estadisticas["tokens_entrada"] >= presupuesto_tokens:
-                                presupuesto_evento.set()
-        except Exception as exc:
-            estadisticas["error_lector"] = str(exc)
-            uso_desconocido_evento.set()
+        def leer_salida():
+            try:
+                with salida_jsonl.open("w", encoding="utf-8") as archivo:
+                    for linea in proc.stdout:
+                        archivo.write(linea)
+                        archivo.flush()
+                        resumen = uso.resumir_stream([linea])
+                        if resumen["pasos"]:
+                            estadisticas["pasos"] += resumen["pasos"]
+                            entrada = resumen.get("entrada")
+                            if entrada is None:
+                                estadisticas["pasos_sin_tokens"] += 1
+                                uso_desconocido_evento.set()
+                            else:
+                                estadisticas["tokens_entrada"] += entrada
+                                if estadisticas["tokens_entrada"] >= presupuesto_tokens:
+                                    presupuesto_evento.set()
+            except Exception as exc:
+                estadisticas["error_lector"] = str(exc)
+                uso_desconocido_evento.set()
 
-    lector = threading.Thread(target=leer_salida, name="orquestador-jsonl", daemon=True)
-    inicio = time.monotonic()
-    lector.start()
-    motivo = None
-    while proc.poll() is None:
-        if presupuesto_evento.is_set():
-            motivo = "presupuesto_agotado"
-            break
-        if uso_desconocido_evento.is_set():
-            motivo = "presupuesto_no_verificable"
-            break
-        if time.monotonic() - inicio >= timeout_s:
-            motivo = "timeout"
-            break
-        time.sleep(0.05)
+        lector = threading.Thread(target=leer_salida, name="orquestador-jsonl", daemon=True)
+        inicio = time.monotonic()
+        lector.start()
+        motivo = None
+        while proc.poll() is None:
+            if presupuesto_evento.is_set():
+                motivo = "presupuesto_agotado"
+                break
+            if uso_desconocido_evento.is_set():
+                motivo = "presupuesto_no_verificable"
+                break
+            if time.monotonic() - inicio >= timeout_s:
+                motivo = "timeout"
+                break
+            time.sleep(0.05)
 
-    if motivo:
-        _terminar_grupo(proc, gracia_s)
-    else:
-        proc.wait()
-    lector.join(timeout=gracia_s)
-    if lector.is_alive():
-        _terminar_grupo(proc, gracia_s)
+        if motivo:
+            _terminar_grupo(proc, gracia_s)
+        else:
+            proc.wait()
         lector.join(timeout=gracia_s)
-        if motivo is None:
-            motivo = "error_lector_jsonl"
-    if motivo is None and presupuesto_evento.is_set():
-        motivo = "presupuesto_agotado"
-    if motivo is None and uso_desconocido_evento.is_set():
-        motivo = "presupuesto_no_verificable"
-    return {
-        "codigo_salida": proc.returncode if proc.returncode is not None else -1,
-        "timeout": motivo == "timeout",
-        "presupuesto_agotado": motivo == "presupuesto_agotado",
-        "presupuesto_no_verificable": motivo in ("presupuesto_no_verificable", "error_lector_jsonl"),
-        "error_lector_jsonl": estadisticas["error_lector"],
-        **estadisticas,
-    }
+        if lector.is_alive():
+            _terminar_grupo(proc, gracia_s)
+            lector.join(timeout=gracia_s)
+            if motivo is None:
+                motivo = "error_lector_jsonl"
+        if motivo is None and presupuesto_evento.is_set():
+            motivo = "presupuesto_agotado"
+        if motivo is None and (uso_desconocido_evento.is_set() or estadisticas["pasos"] == 0):
+            motivo = "presupuesto_no_verificable"
+        return {
+            "codigo_salida": proc.returncode if proc.returncode is not None else -1,
+            "motivo": motivo,
+            "timeout": motivo == "timeout",
+            "presupuesto_agotado": motivo == "presupuesto_agotado",
+            "presupuesto_no_verificable": motivo in ("presupuesto_no_verificable", "error_lector_jsonl"),
+            **estadisticas,
+        }
+    finally:
+        err_file.close()
 
 
 def preparar_worktree(cfg: dict, repo: Path, base_sha: str) -> tuple[Path, str, bool]:
