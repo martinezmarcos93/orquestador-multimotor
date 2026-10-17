@@ -56,6 +56,8 @@ No tiene dependencias externas: solo la librería estándar.
 
    En un encargo de `implementador` que deba preservar los tests, agregá `inmutables = ["tests/**"]` y mantené el código de producción dentro de `permitidos`; el patrón protegido bloquea cualquier cambio en esas rutas, incluso archivos nuevos.
 
+   Para una cadena test-first, el encargo `tester` usa `espera_rojo = true` y `espera_rojo_contiene = ["nombre_del_test", "AssertionError"]`, con `permitidos = ["tests/**"]`. El implementador declara `depende_de = ["001"]`, `inmutables = ["tests/**"]` y `permitidos = ["src/**"]`. Pasá ambos encargos a `cola.py` en el mismo lote. Por ahora cada encargo admite una sola dependencia y el tester debe tener baseline verde antes de añadir los tests.
+
 3. **Despachá** (desde Claude, con `run_in_background`; se reactiva solo al terminar):
 
    ```bash
@@ -86,7 +88,10 @@ Cada corrida añade un registro compacto a `runs/historial.jsonl`. El uso se ext
 | `falla_oraculo` | Los tests no pasan | Nueva ronda con feedback concreto |
 | `sin_cambios` / `trabajo_sin_commitear` | No hizo nada, o dejó cambios sueltos | Nueva ronda o los commitea |
 | `fuera_de_alcance` | Tocó archivos no permitidos | Descarta o devuelve sin leer el diff |
-| `viola_inmutables` | Modificó, borró o renombró una ruta protegida | Rechaza la entrega y restaura los archivos protegidos |
+| `viola_inmutables` | Modificó, borró o renombró una ruta protegida | Rechaza la entrega; omite oráculo/mutación para evitar efectos secundarios |
+| `tests_preparados` | Tester añadió tests que fallan con los marcadores esperados | Resultado intermedio: ejecutar el implementador dependiente |
+| `tests_no_fallan` / `tests_rojos_sin_evidencia` | Los tests no fallan o el fallo no coincide con la evidencia declarada | Corregir el encargo tester antes de implementar |
+| `dependencia_fallida` / `dependencia_no_resuelta` | Un predecesor no fue aprobado o no se pudo resolver | No lanzar el dependiente; revisar la cadena |
 | `dependencia_nueva` / `posible_secreto` | Cambió dependencias o metió algo sensible | Descarta |
 | `timeout` / `error_opencode` | Cuota, proxy o modelo colgado | Revisa `opencode.err` |
 | `worktree_reutilizado_sucio` | El worktree conserva cambios sin commitear de una corrida anterior | Preserva o limpia explícitamente esos cambios antes de reintentar |
