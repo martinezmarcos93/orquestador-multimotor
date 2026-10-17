@@ -450,6 +450,13 @@
     },
     "error_lector_jsonl": {
       "type": "string"
+    },
+    "tokens_entrada_parcial": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
     }
   },
   "additionalProperties": true
