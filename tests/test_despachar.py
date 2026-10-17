@@ -55,6 +55,21 @@ class TestParseo(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "inmutables"):
             d.parsear_encargo(ENCARGO.replace("+++\n# Encargo", 'inmutables = ["/etc/**"]\n+++\n# Encargo'))
 
+    def test_espera_rojo_requiere_tester_marcadores_y_alcance_de_tests(self):
+        texto = ENCARGO.replace("+++\n# Encargo", 'espera_rojo = true\nespera_rojo_contiene = ["test_nueva_funcion", "AssertionError"]\n+++\n# Encargo')
+        cfg = d.parsear_encargo(texto)
+        self.assertTrue(cfg["espera_rojo"])
+        self.assertEqual(cfg["espera_rojo_contiene"], ["test_nueva_funcion", "AssertionError"])
+        sin_marcadores = ENCARGO.replace("+++\n# Encargo", 'espera_rojo = true\n+++\n# Encargo')
+        with self.assertRaisesRegex(ValueError, "marcadores"):
+            d.parsear_encargo(sin_marcadores)
+        otro_agente = texto.replace('agente = "tester"', 'agente = "implementador"')
+        with self.assertRaisesRegex(ValueError, "agente tester"):
+            d.parsear_encargo(otro_agente)
+        alcance_mixto = texto.replace('permitidos = ["tests/**"]', 'permitidos = ["tests/**", "src/**"]')
+        with self.assertRaisesRegex(ValueError, "permitidos"):
+            d.parsear_encargo(alcance_mixto)
+
     def test_depende_de_se_valida_como_lista_de_ids_unicos_y_sin_autodependencia(self):
         cfg = d.parsear_encargo(ENCARGO)
         self.assertEqual(cfg["depende_de"], [])
@@ -733,6 +748,37 @@ class TestAlcance(unittest.TestCase):
                 d.violaciones_inmutables(cambiados, ["tests/**"]),
                 ["tests/borrado.py", "tests/renombrado.py"],
             )
+
+
+class TestResultadoTestFirst(unittest.TestCase):
+    def test_acepta_rojo_solo_con_ruta_test_y_marcadores(self):
+        resultado, nota = d.clasificar_resultado_test_first(
+            "falla_oraculo", 0, ["tests/test_feature.py", "REPORTE.md"],
+            "FAIL test_feature AssertionError: falta la función", ["test_feature", "AssertionError"],
+        )
+        self.assertEqual(resultado, "tests_preparados")
+        self.assertIn("baseline era verde", nota)
+
+    def test_rechaza_rojo_sin_marcadores_o_sin_archivos_test(self):
+        resultado, _ = d.clasificar_resultado_test_first(
+            "falla_oraculo", 0, ["tests/test_feature.py"], "SyntaxError", ["AssertionError"],
+        )
+        self.assertEqual(resultado, "tests_rojos_sin_evidencia")
+        resultado, _ = d.clasificar_resultado_test_first(
+            "falla_oraculo", 0, ["REPORTE.md"], "AssertionError", ["AssertionError"],
+        )
+        self.assertEqual(resultado, "tests_rojos_sin_evidencia")
+
+    def test_tests_que_pasan_no_se_aceptan_como_red_esperado(self):
+        resultado, _ = d.clasificar_resultado_test_first("pasa", 0, ["tests/test_feature.py"], "", ["AssertionError"])
+        self.assertEqual(resultado, "tests_no_fallan")
+
+    def test_error_del_trabajador_no_se_convierte_en_tests_preparados(self):
+        resultado, nota = d.clasificar_resultado_test_first(
+            "falla_oraculo", 1, ["tests/test_feature.py"], "AssertionError", ["AssertionError"],
+        )
+        self.assertEqual(resultado, "falla_oraculo")
+        self.assertIsNone(nota)
 
 
 class TestVeredicto(unittest.TestCase):
