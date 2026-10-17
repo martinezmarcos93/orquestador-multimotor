@@ -39,9 +39,7 @@ No tiene dependencias externas: solo la librería estándar.
    agente = "tester"
    tema = "tests-nucleo"
    base = "main"
-   permitidos = ["src/**", "tests/**"]
-   # Opcional: bloquear cualquier modificación, borrado o renombre de tests existentes
-   inmutables = ["tests/**"]
+   permitidos = ["tests/**"]
    oraculo = [".venv/bin/python -m pytest -q"]
    timeout_min = 20
    # Solo si el oráculo necesita usar el entorno del repo original (reduce aislamiento):
@@ -55,6 +53,8 @@ No tiene dependencias externas: solo la librería estándar.
    umbral = 0.8
    +++
    ```
+
+   En un encargo de `implementador` que deba preservar los tests, agregá `inmutables = ["tests/**"]` y mantené el código de producción dentro de `permitidos`; el patrón protegido bloquea cualquier cambio en esas rutas, incluso archivos nuevos.
 
 3. **Despachá** (desde Claude, con `run_in_background`; se reactiva solo al terminar):
 
