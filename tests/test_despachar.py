@@ -26,6 +26,7 @@ class TestParseo(unittest.TestCase):
         self.assertEqual(cfg["timeout_cola_min"], 50)
         self.assertFalse(cfg["permitir_entornos_compartidos"])
         self.assertEqual(cfg["permitidos"], ["tests/**"])
+        self.assertEqual(cfg["inmutables"], [])
 
     def test_mutacion_con_defaults(self):
         cfg = d.parsear_encargo(ENCARGO.replace("+++\n# Encargo", '[mutacion]\narchivos = ["a.py"]\n+++\n# Encargo'))
@@ -47,6 +48,12 @@ class TestParseo(unittest.TestCase):
     def test_rechaza_tema_con_path_traversal(self):
         with self.assertRaises(ValueError):
             d.parsear_encargo(ENCARGO.replace("tests-nucleo", "../x"))
+
+    def test_inmutables_debe_ser_lista_de_patrones_relativos(self):
+        with self.assertRaisesRegex(ValueError, "inmutables"):
+            d.parsear_encargo(ENCARGO.replace("+++\n# Encargo", 'inmutables = "../secreto"\n+++\n# Encargo'))
+        with self.assertRaisesRegex(ValueError, "inmutables"):
+            d.parsear_encargo(ENCARGO.replace("+++\n# Encargo", 'inmutables = ["/etc/**"]\n+++\n# Encargo'))
 
     def test_timeout_cola_debe_superar_timeout_del_worker(self):
         texto = ENCARGO.replace('oraculo = ["pytest -q"]', 'oraculo = ["pytest -q"]\ntimeout_min = 20\ntimeout_cola_min = 20')
@@ -618,6 +625,16 @@ class TestAlcance(unittest.TestCase):
     def test_no_confunde_prefijos(self):
         self.assertEqual(d.fuera_de_alcance(["tests_extra/a.py"], ["tests/**"]), ["tests_extra/a.py"])
 
+    def test_patrones_inmutables_detectan_modificaciones_y_no_confunden_prefijos(self):
+        cambiados = ["tests/test_a.py", "tests_extra/test_b.py", "src/app.py"]
+        self.assertEqual(d.violaciones_inmutables(cambiados, ["tests/**"]), ["tests/test_a.py"])
+
+    def test_patron_inmutable_exacto(self):
+        self.assertEqual(
+            d.violaciones_inmutables(["README.md", "tests/test_a.py"], ["README.md"]),
+            ["README.md"],
+        )
+
 
 class TestVeredicto(unittest.TestCase):
     base = dict(timeout=False, rc_opencode=0, commits=1, sucios=[], fuera=[], oraculo_ok=True,
@@ -631,6 +648,12 @@ class TestVeredicto(unittest.TestCase):
 
     def test_gravedad_secreto_gana(self):
         self.assertEqual(self.v(secretos=True, fuera=["x"], oraculo_ok=False), "posible_secreto")
+
+    def test_archivo_inmutable_bloquea_aprobacion(self):
+        self.assertEqual(
+            self.v(inmutables=["tests/test_existente.py"], fuera=[], oraculo_ok=True),
+            "viola_inmutables",
+        )
 
     def test_fuera_antes_que_oraculo(self):
         self.assertEqual(self.v(fuera=["src/x.py"], oraculo_ok=False), "fuera_de_alcance")
