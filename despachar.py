@@ -872,6 +872,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         presupuesto_agotado = False
         presupuesto_no_verificable = False
         tokens_entrada_observados = None
+        tokens_entrada_parcial = None
         if reevaluar:
             etapa(run, "reevaluación: no se vuelve a lanzar OpenCode (ni se gasta cuota ni una ronda)")
         else:
@@ -900,7 +901,14 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                 timeout = monitor["timeout"]
                 presupuesto_agotado = monitor["presupuesto_agotado"]
                 presupuesto_no_verificable = monitor["presupuesto_no_verificable"]
-                tokens_entrada_observados = monitor["tokens_entrada"]
+                if monitor["presupuesto_no_verificable"]:
+                    tokens_entrada_observados = None
+                    tokens_entrada_parcial = (
+                        monitor["tokens_entrada"]
+                        if monitor["pasos"] > monitor["pasos_sin_tokens"] else None
+                    )
+                else:
+                    tokens_entrada_observados = monitor["tokens_entrada"]
                 estado["pasos_observados"] = monitor["pasos"]
                 estado["pasos_sin_tokens"] = monitor["pasos_sin_tokens"]
                 if monitor.get("error_lector"):
@@ -965,6 +973,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         estado.update(
             presupuesto_tokens=cfg.get("presupuesto_tokens"),
             tokens_entrada_observados=tokens_entrada_observados,
+            tokens_entrada_parcial=tokens_entrada_parcial,
             presupuesto_agotado=presupuesto_agotado,
             presupuesto_no_verificable=presupuesto_no_verificable,
             espera_rojo=cfg.get("espera_rojo", False), depende_de=cfg.get("depende_de", []),
