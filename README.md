@@ -42,7 +42,7 @@ No tiene dependencias externas: solo la librería estándar.
    permitidos = ["tests/**"]
    oraculo = [".venv/bin/python -m pytest -q"]
    timeout_min = 20
-   # Opcional: usar Codex CLI sin prompts, en sandbox workspace-write
+   # Opcional: Codex CLI con revisión automática de permisos y sandbox workspace-write
    # motor = "codex"
    # Opcional: presupuesto máximo de tokens de entrada, vigilado durante la ejecución
    # presupuesto_tokens = 400000
@@ -77,7 +77,7 @@ No tiene dependencias externas: solo la librería estándar.
 
 La CLI valida automáticamente repo, referencia base, tipos de configuración y agentes instalados antes de despachar o revisar. `--validar` no crea worktree ni ejecuta oráculos o modelos. Los oráculos tienen un timeout por comando y, al agotarse, se termina su grupo de procesos. Un worktree reutilizado con cambios sin commitear se bloquea para evitar mezclar trabajo anterior.
 Cada corrida añade un registro compacto a `runs/historial.jsonl`. El uso se extrae de eventos `step-finish` presentes en JSONL; si faltan datos, se muestran como desconocidos y no como cero. El ledger no guarda prompts ni diffs.
-El backend predeterminado es OpenCode. Con `motor = "codex"`, el despachador ejecuta Codex CLI mediante `codex exec --sandbox workspace-write --ask-for-approval never --json -`: no aparecen prompts interactivos; las operaciones fuera del sandbox fallan cerradas en vez de escalarse. Esta opción no controla sesiones abiertas manualmente en Codex Desktop/IDE. `presupuesto_tokens` todavía no es compatible con el stream JSONL de Codex y se rechaza en preflight.
+El backend predeterminado es OpenCode. Con `motor = "codex"`, el despachador ejecuta `codex exec --approve-for-me --json -`, con `sandbox_workspace_write.writable_roots=[]` y `network_access=false`: Codex aplica su revisión automática de solicitudes dentro de `workspace-write` y no abre prompts interactivos al usuario. Esto no delega cada aprobación a Claude; Claude revisa la entrega final, y las operaciones fuera del sandbox deben fallar cerradas. No controla sesiones abiertas manualmente en Codex Desktop/IDE. `presupuesto_tokens` aún no es compatible con el stream JSONL de Codex y se rechaza en preflight.
    ```
 
 4. **Leé el veredicto** en `runs/<proyecto>-<id>/ronda-N/estado.json`, revisá el diff y decidí. Si el resultado es `pasa`, la vista previa `integracion_previa` informa si la combinación con la base actual parece limpia o tiene conflictos; es solo lectura y no hace merge.
