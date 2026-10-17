@@ -42,6 +42,11 @@ def registro_desde_estado(estado: dict) -> dict:
             estado.get("integracion_previa", {}).get("estado")
             if isinstance(estado.get("integracion_previa"), dict) else None
         ),
+        "presupuesto_tokens": estado.get("presupuesto_tokens"),
+        "tokens_entrada_observados": estado.get("tokens_entrada_observados"),
+        "tokens_entrada_parcial": estado.get("tokens_entrada_parcial"),
+        "presupuesto_agotado": estado.get("presupuesto_agotado"),
+        "presupuesto_no_verificable": estado.get("presupuesto_no_verificable"),
         "estado_json": estado.get("estado_json"),
     }
 
