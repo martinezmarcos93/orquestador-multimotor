@@ -42,6 +42,8 @@ No tiene dependencias externas: solo la librería estándar.
    permitidos = ["tests/**"]
    oraculo = [".venv/bin/python -m pytest -q"]
    timeout_min = 20
+   # Opcional: presupuesto máximo de tokens de entrada, vigilado durante la ejecución
+   # presupuesto_tokens = 400000
    # Solo si el oráculo necesita usar el entorno del repo original (reduce aislamiento):
    # permitir_entornos_compartidos = true
    revisor = true                 # opcional: revisión de solo lectura tras un "pasa"
@@ -93,6 +95,8 @@ Cada corrida añade un registro compacto a `runs/historial.jsonl`. El uso se ext
 | `tests_no_fallan` / `tests_rojos_sin_evidencia` | Los tests no fallan o el fallo no coincide con la evidencia declarada | Corregir el encargo tester antes de implementar |
 | `dependencia_fallida` / `dependencia_no_resuelta` | Un predecesor no fue aprobado o no se pudo resolver | No lanzar el dependiente; revisar la cadena |
 | `dependencia_nueva` / `posible_secreto` | Cambió dependencias o metió algo sensible | Descarta |
+| `presupuesto_agotado` | Alcanzó `presupuesto_tokens` | Conserva la entrega parcial y evalúa si corresponde ampliar el límite |
+| `presupuesto_no_verificable` | El stream no permite medir tokens de entrada | Se detiene por seguridad; verifica el formato JSONL y la versión de OpenCode |
 | `timeout` / `error_opencode` | Cuota, proxy o modelo colgado | Revisa `opencode.err` |
 | `worktree_reutilizado_sucio` | El worktree conserva cambios sin commitear de una corrida anterior | Preserva o limpia explícitamente esos cambios antes de reintentar |
 | `tope_rondas` | Ya hubo 2 rondas del mismo encargo | Lo toma Claude |
