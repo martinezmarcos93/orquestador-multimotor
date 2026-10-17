@@ -1056,6 +1056,8 @@ ACCIONES_SIGUIENTES = {
     "sin_cambios": "Confirmar si el encargo ya estaba satisfecho o si faltó trabajo.",
     "error_opencode": "Inspeccionar opencode.err y el estado del worktree antes de reintentar.",
     "timeout": "Inspeccionar logs; dividir el encargo o ajustar timeout_min.",
+    "presupuesto_agotado": "El worker alcanzó presupuesto_tokens; revisar la entrega parcial antes de elevar el límite.",
+    "presupuesto_no_verificable": "Se detuvo el worker porque el stream no permitió verificar tokens de entrada; revisar formato JSONL y versión de OpenCode.",
     "timeout_despachador": "Inspeccionar el diagnóstico de la cola y comprobar que no queden procesos.",
     "error_despachador": "Leer stderr y corregir el error de infraestructura antes de reintentar.",
     "error_cola": "Inspeccionar el error del runner y la configuración del encargo.",
