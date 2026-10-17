@@ -152,13 +152,13 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 **Implementación inicial en docs/roadmap-hardening.** La configuración optativa motor = "codex" ejecuta:
 
-codex exec --sandbox workspace-write --ask-for-approval never --json -
+codex exec --approve-for-me --json -
 
-El despachador pasa las instrucciones del rol local por stdin, aplica timeout y captura JSONL/stderr. No se usan permisos globales ni un modo de acceso irrestricto. Si Codex intenta una operación fuera del sandbox, la ejecución debe fallar en vez de pedir aprobación interactiva. El backend predeterminado sigue siendo OpenCode.
+El despachador pasa las instrucciones del rol local por stdin, aplica timeout y captura JSONL/stderr. Configura sandbox_workspace_write.writable_roots=[] y network_access=false. Codex realiza su propia revisión automática de solicitudes dentro de workspace-write; no es Claude quien aprueba cada solicitud. Si una operación queda fuera del sandbox, debe fallar cerrada. El backend predeterminado sigue siendo OpenCode.
 
 **Límites explícitos.**
 - Esta política solo aplica a las corridas de Codex lanzadas por el despachador; no controla una sesión abierta manualmente en Codex Desktop/IDE.
-- No convierte a Claude en aprobador de operaciones fuera del sandbox: se evita el prompt y se falla cerrado. Un futuro mecanismo de excepciones tendría que usar una API de autorización explícita y una política auditable.
+- No convierte a Claude en aprobador directo de cada solicitud: el no-prompt se resuelve mediante la revisión automática de Codex y el sandbox. Un futuro mecanismo de excepciones realmente dirigido por Claude tendría que usar una API de autorización explícita y una política auditable.
 - El parser y presupuesto de tokens de OpenCode no se aplican a Codex; la combinación se rechaza en preflight hasta validar el stream de uso de Codex.
 - No se ha confirmado en el equipo anfitrión que las operaciones Git necesarias para un worktree funcionen bajo la sandbox de Codex.
 
