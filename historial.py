@@ -140,9 +140,12 @@ def main() -> int:
         return 0
     print(f"Corridas: {len(registros)} · líneas inválidas ignoradas: {invalidas} · agrupado por {args.por}")
     for grupo in resumen:
-        tokens = grupo["uso"]["entrada"]["total"]
-        salida = grupo["uso"]["salida"]["total"]
-        tokens_txt = "desconocidos" if tokens is None or salida is None else f"entrada={tokens}, salida={salida}"
+        def formato_uso(campo):
+            agregado = grupo["uso"][campo]
+            if agregado["total"] is None:
+                return f"{campo}=desconocido"
+            return f"{campo}={agregado['total']} ({agregado['corridas_con_dato']}/{grupo['corridas']} corridas con dato)"
+        tokens_txt = f"{formato_uso('entrada')}, {formato_uso('salida')}"
         print(f"{grupo[args.por]}: {grupo['corridas']} corridas, {grupo['pasa']} pasa, "
               f"duración={grupo['duracion_s']}s ({grupo['corridas_con_duracion']} conocidas), {tokens_txt}")
     return 0
