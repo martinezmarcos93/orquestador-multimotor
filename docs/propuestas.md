@@ -104,16 +104,18 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 ## 5. Encadenar encargos y ciclo tests → implementar
 
-**Origen.** El planner/ejecutor de `director-cli` (tests de aceptación primero, luego implementación).
+**Origen.** El planner/ejecutor de director-cli: tests de aceptación primero, luego implementación.
 
-**Idea.** El `tester` escribe tests que fallan por la razón correcta; esos tests son el oráculo del `implementador`, que no puede tocarlos (propuesta 3).
+**Idea.** El tester escribe tests que fallan por la razón esperada; esos tests son el oráculo del implementador, que no puede modificarlos.
 
-**Implementación.**
-- Campo `depende_de = ["001"]`: `cola.py` ordena por dependencia y fija la `base` del encargo B a la rama del A. Ya existe `base` configurable, así que es planificación.
-- Un encargo B con `inmutables = ["tests/**"]` y `permitidos = ["src/**"]`.
-- Un campo `espera_rojo = true` en A: el oráculo "antes" debe fallar (tests nuevos) y "después" debe fallar solo en los tests nuevos, para no aceptar tests que ya pasan sin código.
+**Implementación inicial en docs/roadmap-hardening (CI run #326: 152 tests aprobados).**
+- Campo depende_de = ["001"]: cola.py valida que la dependencia esté en el lote y en el mismo proyecto/repositorio, rechaza ciclos y limita cada tarea a una sola rama predecesora. Espera a que el predecesor esté aprobado y crea una copia temporal del encargo B con base apuntando a la rama A; no modifica el archivo original.
+- El encargo B puede declarar inmutables = ["tests/**"] y permitidos = ["src/**"].
+- En A, espera_rojo = true exige agente tester, alcance de tests y espera_rojo_contiene con marcadores literales. El oráculo antes debe pasar; el oráculo después debe fallar y contener todos los marcadores. Si cumple, el resultado intermedio es tests_preparados. Si los tests pasan o el fallo no tiene la evidencia declarada, la etapa no se acepta.
+- cola.py reconoce tests_preparados como resultado intermedio y continúa con la tarea dependiente.
 
-**Aceptación.** Ejemplo real en el sandbox: el `tester` escribe tests de una función nueva, el `implementador` la escribe, y el oráculo pasa sin que el segundo haya modificado un test.
+**Aceptación pendiente.** Ejemplo real en sandbox: tester crea tests de una función nueva, implementador los satisface, el oráculo final pasa y los tests permanecen inmutables. Dependencias múltiples todavía no están soportadas.
+
 
 ## 6. Presupuesto de tokens con corte en vivo
 
