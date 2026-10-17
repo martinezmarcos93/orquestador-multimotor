@@ -95,6 +95,9 @@ def parsear_encargo(texto: str) -> dict:
         mut.setdefault("umbral", 0.8)
         mut.setdefault("max", 80)
     cfg.setdefault("base", "main")
+    cfg.setdefault("motor", "opencode")
+    if cfg["motor"] not in ("opencode", "codex"):
+        raise ValueError("'motor' debe ser 'opencode' o 'codex'")
     depende_de = cfg.get("depende_de", [])
     if not isinstance(depende_de, list) or any(
         not isinstance(dep, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", dep)
@@ -158,6 +161,8 @@ def parsear_encargo(texto: str) -> dict:
         not isinstance(presupuesto_tokens, int) or isinstance(presupuesto_tokens, bool) or presupuesto_tokens < 1
     ):
         raise ValueError("'presupuesto_tokens' debe ser un entero positivo")
+    if cfg["motor"] == "codex" and presupuesto_tokens is not None:
+        raise ValueError("'presupuesto_tokens' aún no es compatible con el stream JSONL de Codex")
     cfg.setdefault("timeout_cola_min", cfg["timeout_min"] + 30)
     if (not isinstance(cfg["timeout_cola_min"], int) or isinstance(cfg["timeout_cola_min"], bool)
             or cfg["timeout_cola_min"] <= cfg["timeout_min"]):
