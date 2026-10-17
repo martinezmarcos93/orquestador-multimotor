@@ -104,6 +104,15 @@ def parsear_encargo(texto: str) -> dict:
                 or "\\" in patron or re.match(r"^[A-Za-z]:", patron)
                 or ".." in Path(patron).parts):
             raise ValueError(f"patrón inseguro o inválido en 'permitidos': {patron!r}")
+    inmutables = cfg.get("inmutables", [])
+    if not isinstance(inmutables, list):
+        raise ValueError("'inmutables' debe ser una lista de patrones relativos")
+    for patron in inmutables:
+        if (not isinstance(patron, str) or not patron.strip() or patron.startswith(("~", "/"))
+                or "\\" in patron or re.match(r"^[A-Za-z]:", patron)
+                or ".." in Path(patron).parts):
+            raise ValueError(f"patrón inseguro o inválido en 'inmutables': {patron!r}")
+    cfg["inmutables"] = inmutables
     if (not isinstance(cfg["oraculo"], list) or not cfg["oraculo"]
             or any(not isinstance(cmd, str) or not cmd.strip() for cmd in cfg["oraculo"])):
         raise ValueError("'oraculo' debe ser una lista no vacía de comandos no vacíos")
@@ -264,13 +273,22 @@ def fuera_de_alcance(archivos: list[str], permitidos: list[str]) -> list[str]:
     return [a for a in archivos if not any(r.match(a) for r in regexes)]
 
 
+def violaciones_inmutables(archivos: list[str], inmutables: list[str]) -> list[str]:
+    """Devuelve archivos cambiados que coinciden con patrones protegidos."""
+    regexes = [_glob_a_regex(p) for p in inmutables]
+    return sorted({a for a in archivos if any(r.match(a) for r in regexes)})
+
+
 def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: list[str],
                       fuera: list[str], oraculo_ok: bool, dependencias: list[str], secretos: bool,
+                      inmutables: list[str] | None = None,
                       puntaje_mutacion: float | None = None, umbral_mutacion: float = 0.0,
                       error_mutacion: bool = False, sin_candidatos_mutacion: bool = False) -> str:
     """Veredicto único; el orden es el de gravedad."""
     if secretos:
         return "posible_secreto"
+    if inmutables:
+        return "viola_inmutables"
     if fuera:
         return "fuera_de_alcance"
     if dependencias:
@@ -678,12 +696,15 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
 
         base_ref = sha_base_main
         commits = int(git(wt, "rev-list", "--count", f"{base_ref}..HEAD") or 0)
-        cambiados = set(git(wt, "diff", "--name-only", f"{base_ref}..HEAD").splitlines())
+        # Sin detección de renombres: al mover un archivo protegido, deben verse
+        # tanto la ruta de origen como la de destino para no eludir inmutables.
+        cambiados = set(git(wt, "diff", "--name-only", "--no-renames", f"{base_ref}..HEAD").splitlines())
         sucios = listar_sucios(wt)
         cambiados |= set(sucios)
         diff = git(wt, "diff", f"{base_ref}..HEAD", check=False)
         añadidas = "\n".join(l for l in diff.splitlines() if l.startswith("+") and not l.startswith("+++"))
         fuera = fuera_de_alcance(sorted(cambiados), cfg["permitidos"])
+        protegidos = violaciones_inmutables(sorted(cambiados), cfg.get("inmutables", []))
         dependencias = sorted(a for a in cambiados if es_archivo_dependencias(a))
         etapa(run, "oráculo (después) y verificación de alcance")
         oraculo_ok = correr_oraculo(cfg["oraculo"], wt, repo, log_oraculo, timeout_s=cfg["timeout_min"] * 60)
@@ -704,7 +725,8 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         head_fin = git(wt, "rev-parse", "HEAD")
         base_sha_fin = git(repo, "rev-parse", cfg["base"])
         estado.update(
-            commits=commits, archivos=sorted(cambiados), fuera_de_alcance=fuera, sin_commitear=sucios,
+            commits=commits, archivos=sorted(cambiados), fuera_de_alcance=fuera,
+            archivos_inmutables=protegidos, sin_commitear=sucios,
             dependencias_tocadas=dependencias, oraculo_despues=oraculo_ok,
             reporte=(wt / "REPORTE.md").exists(), rc_opencode=rc,
             head_sha_fin=head_fin,
@@ -713,7 +735,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
             main_intacto=base_sha_fin == sha_base_main,
             resultado=decidir_resultado(timeout=timeout, rc_opencode=rc, commits=commits, sucios=sucios,
                                         fuera=fuera, oraculo_ok=oraculo_ok, dependencias=dependencias,
-                                        secretos=posible_secreto(añadidas),
+                                        secretos=posible_secreto(añadidas), inmutables=protegidos,
                                         puntaje_mutacion=(resumen_mut or {}).get("puntaje"),
                                         umbral_mutacion=(mut_cfg or {}).get("umbral", 0.0),
                                         error_mutacion=bool((resumen_mut or {}).get("error")),
@@ -784,6 +806,7 @@ ACCIONES_SIGUIENTES = {
     "worktree_base_divergente": "Preservar cambios y recrear el worktree desde una base compatible.",
     "worktree_reutilizado_sucio": "Inspeccionar los cambios preexistentes; preservarlos o limpiarlos explícitamente antes de reintentar.",
     "fuera_de_alcance": "Revisar y revertir los archivos fuera del alcance autorizado.",
+    "viola_inmutables": "Restaurar los archivos protegidos; el encargo no autoriza modificarlos, borrarlos ni renombrarlos.",
     "posible_secreto": "Retirar la credencial, revisar su exposición y rotarla si corresponde.",
     "dependencia_nueva": "Revisar y autorizar explícitamente los cambios de dependencias.",
     "trabajo_sin_commitear": "Pedir al trabajador que commitee o descarte sus cambios y reevaluar.",
