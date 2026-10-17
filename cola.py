@@ -24,7 +24,7 @@ import despachar
 logger = logging.getLogger("cola")
 
 MAX_PERMITIDO = 3
-FALLOS_DE_INFRAESTRUCTURA = {"timeout", "timeout_despachador", "error_opencode", "error_despachador", "error_cola", "presupuesto_no_verificable"}
+FALLOS_DE_INFRAESTRUCTURA = {"timeout", "timeout_despachador", "error_opencode", "error_despachador", "error_cola", "presupuesto_no_verificable", "error_codex"}
 
 
 def _prefijo(patron: str) -> str:
