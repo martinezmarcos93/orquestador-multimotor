@@ -55,6 +55,15 @@ class TestParseo(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "inmutables"):
             d.parsear_encargo(ENCARGO.replace("+++\n# Encargo", 'inmutables = ["/etc/**"]\n+++\n# Encargo'))
 
+    def test_depende_de_se_valida_como_lista_de_ids_unicos_y_sin_autodependencia(self):
+        cfg = d.parsear_encargo(ENCARGO)
+        self.assertEqual(cfg["depende_de"], [])
+        texto = ENCARGO.replace("+++\n# Encargo", 'depende_de = ["002"]\n+++\n# Encargo')
+        self.assertEqual(d.parsear_encargo(texto)["depende_de"], ["002"])
+        for valor in ('depende_de = "002"', 'depende_de = ["002", "002"]', 'depende_de = ["001"]'):
+            with self.subTest(valor=valor), self.assertRaises(ValueError):
+                d.parsear_encargo(ENCARGO.replace("+++\n# Encargo", valor + "\n+++\n# Encargo"))
+
     def test_timeout_cola_debe_superar_timeout_del_worker(self):
         texto = ENCARGO.replace('oraculo = ["pytest -q"]', 'oraculo = ["pytest -q"]\ntimeout_min = 20\ntimeout_cola_min = 20')
         with self.assertRaisesRegex(ValueError, "timeout_cola_min"):
