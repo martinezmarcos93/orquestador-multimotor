@@ -53,7 +53,7 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 **Dato verificado.** El stream `--format json` de OpenCode trae tokens por paso (`step-finish.tokens`). Una corrida real: 18 pasos, 155.214 tokens de entrada y 2.986 de salida. La entrada crece a cada paso porque se reenvía el contexto: es el costo que importa.
 
-**Implementación inicial en `docs/roadmap-hardening` (CI pendiente).**
+**Implementación inicial en `docs/roadmap-hardening` (CI run #298: 141 tests aprobados).**
 - `uso.py` implementa `resumir_stream(lineas)` y `resumir_archivo(ruta)`, suma tokens por evento `step-finish` y no convierte campos/archivos ausentes en cero.
 - El despachador añade resúmenes del stream de OpenCode y del revisor al estado cuando están disponibles.
 - `historial.py` mantiene `runs/historial.jsonl` append-only con bloqueo exclusivo y `fsync`; registra resultado, duración, tokens conocidos, puntaje de mutación, hallazgos altos y referencia al estado, sin guardar prompts ni diffs.
@@ -64,22 +64,20 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 **Pendiente de verificar.** Si los eventos indican qué modelo respondió. Si no, el nombre real lo sabe LiteLLM (ver propuesta 9).
 
-## 2. `estado.json` v1
+## 2. estado.json v1
 
-**Origen.** El state packet: referencias git, archivos propios y cambiados, comandos con código de salida y log, tests por fase, evidencias, próxima acción.
+**Origen.** El state packet: referencias Git, archivos propios y cambiados, comandos con código de salida y log, tests por fase, evidencias y próxima acción.
 
-**Qué tenemos.** Rama, worktree, archivos, commits, oráculo antes/después (solo booleanos), mutación, revisión.
+**Qué existe.** schema_version = 1, timestamps con zona horaria, siguiente_accion, referencia al propio estado.json, snapshots de HEAD/base, veredicto, alcance, mutación, revisión, vista previa de integración y uso disponible. El ledger también registra un resumen compacto de cada invocación.
 
-**Qué falta, con nombres propios:**
-- `esquema: "estado.v1"`, `base_sha`, `head_sha`, `permitidos` (los archivos propios del encargo).
-- `comandos: [{cmd, codigo_salida, log}]` y `tests: [{fase: "antes"|"despues", ok, log}]`, en vez de booleanos sueltos.
-- `evidencias: [{tipo, ref}]` (reporte, revisión, mutación, logs).
-- **`siguiente_accion`**: hoy la tabla "veredicto → qué hace el director" vive solo en la skill y en el README. Pasarla a código la deja con una única fuente de verdad, y permite que `cola.py` o un futuro proceso nocturno la lea sin un LLM.
-- `inicio` y `fin` en formato ISO.
+**Qué sigue faltando.** No se registran todavía todos los comandos/tests como eventos estructurados con sus logs y referencias de evidencia normalizadas. Tampoco se ha validado una corrida real de OpenCode con el estado producido.
 
-**Implementación.** Una función pura `armar_estado(...)`, un `schemas/estado.v1.schema.json` propio y un validador mínimo con la librería estándar. Los campos actuales se conservan (no rompe nada).
+**Implementación actual.** schemas/estado.v1.schema.json describe los campos principales de Git, resultados, uso, mutación, revisión e integración. validar_estado_v1 valida el estado contra las propiedades declaradas: tipos, const, enum, rangos, longitud, patrones, fechas con zona horaria, campos requeridos y arrays/objetos anidados. Rechaza booleanos en campos enteros. Se permiten propiedades adicionales por compatibilidad. Es un validador del subconjunto utilizado por el esquema, no un motor JSON Schema completo.
 
-**Aceptación.** Todo `estado.json` generado valida contra el esquema; un test recorre cada veredicto posible y comprueba que tenga `siguiente_accion`.
+**Validación.** GitHub Actions run #298 aprobó 141 tests, incluidos casos de restricciones anidadas, tipos y compatibilidad hacia delante.
+
+**Aceptación pendiente.** Cubrir retornos tempranos y cada veredicto con estados persistidos; validar un estado.json producido por una corrida real; decidir si la complejidad justifica adoptar una implementación completa de JSON Schema.
+
 
 ## 3. Archivos `inmutables`
 
