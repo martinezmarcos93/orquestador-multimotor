@@ -96,6 +96,64 @@ class TestMensaje(unittest.TestCase):
         self.assertNotIn("oraculo =", m)
 
 
+class TestPrevisualizacionIntegracion(unittest.TestCase):
+    def _git(self, repo, *args):
+        return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+
+    def _repo(self, root):
+        import subprocess
+        repo = root / "repo"
+        repo.mkdir()
+        self._git(repo, "init", "-q", "-b", "main")
+        self._git(repo, "config", "user.name", "test")
+        self._git(repo, "config", "user.email", "test@example.invalid")
+        (repo / "compartido.txt").write_text("base\n", encoding="utf-8")
+        self._git(repo, "add", "compartido.txt")
+        self._git(repo, "commit", "-qm", "base")
+        return repo
+
+    def test_integracion_limpia_es_solo_lectura(self):
+        import tempfile
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = self._repo(root)
+            self._git(repo, "checkout", "-qb", "worker")
+            (repo / "worker.txt").write_text("worker\n", encoding="utf-8")
+            self._git(repo, "add", "worker.txt")
+            self._git(repo, "commit", "-qm", "worker")
+            worker_sha = self._git(repo, "rev-parse", "HEAD")
+            self._git(repo, "checkout", "-q", "main")
+            (repo / "main.txt").write_text("main\n", encoding="utf-8")
+            self._git(repo, "add", "main.txt")
+            self._git(repo, "commit", "-qm", "main")
+            main_sha = self._git(repo, "rev-parse", "HEAD")
+            resultado = d.previsualizar_integracion(repo, main_sha, worker_sha)
+            self.assertEqual(resultado["estado"], "limpia", resultado)
+            self.assertEqual(self._git(repo, "rev-parse", "HEAD"), main_sha)
+            self.assertEqual(self._git(repo, "status", "--porcelain"), "")
+
+    def test_detecta_conflicto_sin_modificar_refs(self):
+        import tempfile
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = self._repo(root)
+            self._git(repo, "checkout", "-qb", "worker")
+            (repo / "compartido.txt").write_text("worker\n", encoding="utf-8")
+            self._git(repo, "commit", "-qam", "worker changes shared file")
+            worker_sha = self._git(repo, "rev-parse", "HEAD")
+            self._git(repo, "checkout", "-q", "main")
+            (repo / "compartido.txt").write_text("main\n", encoding="utf-8")
+            self._git(repo, "commit", "-qam", "main changes shared file")
+            main_sha = self._git(repo, "rev-parse", "HEAD")
+            resultado = d.previsualizar_integracion(repo, main_sha, worker_sha)
+            self.assertEqual(resultado["estado"], "conflictos", resultado)
+            self.assertTrue(resultado["conflictos"], resultado)
+            self.assertEqual(self._git(repo, "rev-parse", "HEAD"), main_sha)
+            self.assertEqual(self._git(repo, "status", "--porcelain"), "")
+
+
 class TestWorktreeBase(unittest.TestCase):
     def setUp(self):
         self.src_original = d.SRC
