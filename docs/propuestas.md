@@ -2,7 +2,7 @@
 
 Ideas rescatadas de proyectos similares, convertidas en cambios concretos para este orquestador. Solo ideas: no se copia código ni se instala nada de terceros (varios no tienen licencia, uno es GPL-3.0, y los skills/agentes importados corren con `bash` permitido en modo desatendido).
 
-Estado al 2026-10-17: `inmutables` y la vista previa de integración están implementados y cubiertos por CI run #264 (129 tests). Se inició P1 con parser conservador de uso JSONL, ledger append-only y CLI de resumen; CI de P1 pendiente. La integración real con workers OpenCode/LiteLLM y el control de permisos de Codex siguen pendientes de validar por separado.
+Estado al 2026-10-17: el último CI run #370 aprobó 158 tests tras los incrementos de inmutables, vista previa de integración, historial/uso, schema v1, dependencias test-first y presupuesto de tokens. La integración real con OpenCode/LiteLLM y el control de permisos de Codex siguen pendientes de validar por separado.
 
 ## Fuentes revisadas
 
@@ -53,7 +53,7 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 **Dato verificado.** El stream `--format json` de OpenCode trae tokens por paso (`step-finish.tokens`). Una corrida real: 18 pasos, 155.214 tokens de entrada y 2.986 de salida. La entrada crece a cada paso porque se reenvía el contexto: es el costo que importa.
 
-**Implementación inicial en `docs/roadmap-hardening` (CI run #298: 141 tests aprobados).**
+**Implementación inicial en `docs/roadmap-hardening` (CI run #370: 158 tests aprobados).**
 - `uso.py` implementa `resumir_stream(lineas)` y `resumir_archivo(ruta)`, suma tokens por evento `step-finish` y no convierte campos/archivos ausentes en cero.
 - El despachador añade resúmenes del stream de OpenCode y del revisor al estado cuando están disponibles.
 - `historial.py` mantiene `runs/historial.jsonl` append-only con bloqueo exclusivo y `fsync`; registra resultado, duración, tokens conocidos, puntaje de mutación, hallazgos altos y referencia al estado, sin guardar prompts ni diffs.
@@ -108,7 +108,7 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 **Idea.** El tester escribe tests que fallan por la razón esperada; esos tests son el oráculo del implementador, que no puede modificarlos.
 
-**Implementación inicial en docs/roadmap-hardening (CI run #326: 152 tests aprobados).**
+**Implementación inicial en docs/roadmap-hardening (CI run #370: 158 tests aprobados).**
 - Campo depende_de = ["001"]: cola.py valida que la dependencia esté en el lote y en el mismo proyecto/repositorio, rechaza ciclos y limita cada tarea a una sola rama predecesora. Espera a que el predecesor esté aprobado y crea una copia temporal del encargo B con base apuntando a la rama A; no modifica el archivo original.
 - El encargo B puede declarar inmutables = ["tests/**"] y permitidos = ["src/**"].
 - En A, espera_rojo = true exige agente tester, alcance de tests y espera_rojo_contiene con marcadores literales. El oráculo antes debe pasar; el oráculo después debe fallar y contener todos los marcadores. Si cumple, el resultado intermedio es tests_preparados. Si los tests pasan o el fallo no tiene la evidencia declarada, la etapa no se acepta.
@@ -121,7 +121,7 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 **Hueco real.** El timeout por duración no limita el consumo de tokens; una tarea puede agotar la cuota antes de llegar al timeout.
 
-**Implementación inicial en docs/roadmap-hardening (CI pendiente).**
+**Implementación inicial en docs/roadmap-hardening (CI run #370: 158 tests aprobados).**
 - Campo opcional presupuesto_tokens, entero positivo, mide tokens de entrada.
 - Cuando está configurado, el despachador lee stdout JSONL en vivo, persiste cada línea y suma input en eventos step-finish.
 - Al alcanzar el límite, termina el grupo de procesos, conserva el stream parcial y emite presupuesto_agotado.
@@ -129,7 +129,7 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 - El estado distingue tokens_entrada_observados de tokens_entrada_parcial y guarda el presupuesto configurado. El historial incluye presupuesto y resultado.
 - El timeout por duración sigue vigente; si no se configura presupuesto, se conserva el camino de ejecución previo.
 
-**Aceptación pendiente.** CI verde sin ResourceWarning/fugas; tests sintéticos de corte, stream incompleto y timeout; después, verificar que el formato de eventos de la versión instalada de OpenCode/LiteLLM expone los tokens esperados. No hay aún una corrida real con cuota limitada.
+**Aceptación pendiente.** El CI run #370 aprobó 158 tests sin ResourceWarning/fugas, incluidos corte sintético, stream incompleto y timeout. Falta verificar que el formato de eventos de la versión instalada de OpenCode/LiteLLM expone los tokens esperados y probar el límite en una corrida real.
 
 
 ## 7. Vista previa de integración
