@@ -128,6 +128,9 @@ def planificar(encargos: list[dict], runner, max_paralelo: int = 2, corte_fallos
                     logger.error("falló el runner de %s: %s", enc["ruta"], e, exc_info=True)
                     estado = {"id": enc["cfg"]["id"], "proyecto": enc["cfg"]["proyecto"],
                               "resultado": "error_cola", "error": str(e)}
+                estado.setdefault("id", enc["cfg"]["id"])
+                estado.setdefault("proyecto", enc["cfg"]["proyecto"])
+                estado.setdefault("depende_de", enc["cfg"].get("depende_de", []))
                 resultados.append(estado)
                 completados[_clave(enc)] = estado
                 seguidos = seguidos + 1 if estado.get("resultado") in FALLOS_DE_INFRAESTRUCTURA else 0
@@ -135,13 +138,23 @@ def planificar(encargos: list[dict], runner, max_paralelo: int = 2, corte_fallos
     return resultados
 
 def todos_aprobados(resultados: list[dict]) -> bool:
-    """La cola solo devuelve éxito si los tests pasan y la compuerta de revisión no bloquea."""
-    return all(
-        r.get("resultado") in ("pasa", "tests_preparados")
-        and r.get("aprobacion", "no_requerida") in ("no_requerida", "aprobado")
-        for r in resultados
-    )
+    """Solo cierra con éxito si cada etapa pasa o es un tests_preparados consumido."""
+    dependencias_consumidas = set()
+    for resultado in resultados:
+        deps = resultado.get("depende_de", [])
+        if isinstance(deps, list):
+            dependencias_consumidas.update((resultado.get("proyecto"), dep) for dep in deps)
 
+    for resultado in resultados:
+        estado = resultado.get("resultado")
+        aprobado = resultado.get("aprobacion", "no_requerida") in ("no_requerida", "aprobado")
+        if estado == "pasa" and aprobado:
+            continue
+        if (estado == "tests_preparados" and aprobado
+                and (resultado.get("proyecto"), resultado.get("id")) in dependencias_consumidas):
+            continue
+        return False
+    return True
 
 def comunicar_con_timeout(proc, timeout_s: int, gracia_s: float = 5) -> tuple[str, str, bool]:
     """Espera un proceso y, al vencer, termina su grupo completo; devuelve stdout, stderr y timeout."""
