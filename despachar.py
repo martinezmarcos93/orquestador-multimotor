@@ -821,7 +821,11 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         if ronda == 1:
             raise ValueError("no hay ninguna ronda ejecutada que reevaluar")
         ronda -= 1      # la última ronda ya ejecutada; no consume una nueva
-    estado = {"id": cfg["id"], "proyecto": cfg["proyecto"], "agente": cfg["agente"], "ronda": ronda}
+    estado = {
+        "id": cfg["id"], "proyecto": cfg["proyecto"], "agente": cfg["agente"], "ronda": ronda,
+        "presupuesto_tokens": cfg.get("presupuesto_tokens"), "depende_de": cfg.get("depende_de", []),
+        "espera_rojo": cfg.get("espera_rojo", False),
+    }
     if ronda > MAX_RONDAS and not reevaluar:
         estado["resultado"] = "tope_rondas"
         estado["nota"] = f"ya se hicieron {MAX_RONDAS} rondas: lo toma Claude (regla de calibre)"
