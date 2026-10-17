@@ -32,6 +32,7 @@ def registro_desde_estado(estado: dict) -> dict:
         "id": estado.get("id"),
         "ronda": estado.get("ronda"),
         "agente": estado.get("agente"),
+        "motor": estado.get("motor", "opencode"),
         "resultado": estado.get("resultado", "desconocido"),
         "duracion_s": estado.get("duracion_s") if isinstance(estado.get("duracion_s"), (int, float)) else None,
         "uso": _uso_para_registro(estado.get("uso")),
