@@ -84,6 +84,13 @@ class TestParseo(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "timeout_cola_min"):
             d.parsear_encargo(texto)
 
+    def test_presupuesto_tokens_debe_ser_entero_positivo(self):
+        texto = ENCARGO.replace("+++\n# Encargo", 'presupuesto_tokens = 100\n+++\n# Encargo')
+        self.assertEqual(d.parsear_encargo(texto)["presupuesto_tokens"], 100)
+        for valor in ("0", "-1", "true", '"100"'):
+            with self.subTest(valor=valor), self.assertRaisesRegex(ValueError, "presupuesto_tokens"):
+                d.parsear_encargo(ENCARGO.replace("+++\n# Encargo", f"presupuesto_tokens = {valor}\n+++\n# Encargo"))
+
     def test_timeout_worker_no_acepta_valores_no_positivos(self):
         texto = ENCARGO.replace('oraculo = ["pytest -q"]', 'oraculo = ["pytest -q"]\ntimeout_min = 0')
         with self.assertRaisesRegex(ValueError, "timeout_min"):
@@ -814,6 +821,13 @@ class TestVeredicto(unittest.TestCase):
         self.assertEqual(self.v(puntaje_mutacion=0.5, umbral_mutacion=0.8), "tests_debiles")
         self.assertEqual(self.v(puntaje_mutacion=0.9, umbral_mutacion=0.8), "pasa")
 
+    def test_presupuesto_agotado_y_uso_no_verificable_bloquean(self):
+        self.assertEqual(self.v(presupuesto_agotado=True), "presupuesto_agotado")
+        self.assertEqual(
+            self.v(presupuesto_no_verificable=True, presupuesto_agotado=True),
+            "presupuesto_no_verificable",
+        )
+
     def test_mutacion_sin_candidatos_o_con_error_no_aprueba(self):
         self.assertEqual(
             self.v(puntaje_mutacion=None, umbral_mutacion=0.8, sin_candidatos_mutacion=True),
@@ -829,6 +843,76 @@ class TestVeredicto(unittest.TestCase):
         self.assertEqual(self.v(timeout=True), "timeout")
 
 
+
+
+class TestPresupuestoTokens(unittest.TestCase):
+    def _evento(self, entrada):
+        import json
+        return json.dumps({
+            "type": "step-finish",
+            "part": {"type": "step-finish", "tokens": {
+                "input": entrada, "output": 1, "reasoning": 0, "cache": {"read": 0, "write": 0}
+            }},
+        })
+
+    def test_corta_en_vivo_al_superar_presupuesto_y_conserva_jsonl_parcial(self):
+        import tempfile
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            salida = root / "opencode.jsonl"
+            error = root / "opencode.err"
+            evento1, evento2 = self._evento(3), self._evento(4)
+            script = (
+                "import time\n"
+                f"print({evento1!r}, flush=True)\n"
+                "time.sleep(0.2)\n"
+                f"print({evento2!r}, flush=True)\n"
+                "time.sleep(10)\n"
+                "print('done', flush=True)\n"
+            )
+            inicio = time.monotonic()
+            resultado = d.ejecutar_opencode_con_presupuesto(
+                [sys.executable, "-u", "-c", script], cwd=root, timeout_s=5,
+                salida_jsonl=salida, salida_error=error, presupuesto_tokens=5, gracia_s=0.2,
+            )
+            duracion = time.monotonic() - inicio
+            texto = salida.read_text(encoding="utf-8")
+        self.assertTrue(resultado["presupuesto_agotado"], resultado)
+        self.assertFalse(resultado["timeout"], resultado)
+        self.assertGreaterEqual(resultado["tokens_entrada"], 5)
+        self.assertLess(duracion, 4)
+        self.assertIn(evento1, texto)
+        self.assertIn(evento2, texto)
+        self.assertNotIn("done", texto)
+
+    def test_corta_si_el_stream_no_permite_verificar_tokens(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            script = (
+                "import json,time\n"
+                "print(json.dumps({'type':'step-finish','part':{'type':'step-finish'}}), flush=True)\n"
+                "time.sleep(10)\n"
+            )
+            resultado = d.ejecutar_opencode_con_presupuesto(
+                [sys.executable, "-u", "-c", script], cwd=root, timeout_s=5,
+                salida_jsonl=root / "opencode.jsonl", salida_error=root / "opencode.err",
+                presupuesto_tokens=100, gracia_s=0.2,
+            )
+        self.assertTrue(resultado["presupuesto_no_verificable"], resultado)
+        self.assertEqual(resultado["pasos_sin_tokens"], 1)
+
+    def test_no_permite_budget_sin_eventos_de_tokens(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            resultado = d.ejecutar_opencode_con_presupuesto(
+                [sys.executable, "-u", "-c", "print('no json events')"], cwd=root, timeout_s=5,
+                salida_jsonl=root / "opencode.jsonl", salida_error=root / "opencode.err",
+                presupuesto_tokens=100, gracia_s=0.2,
+            )
+        self.assertTrue(resultado["presupuesto_no_verificable"], resultado)
 
 
 class TestOraculoTimeout(unittest.TestCase):
