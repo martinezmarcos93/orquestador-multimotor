@@ -2,7 +2,7 @@
 
 Ideas rescatadas de proyectos similares, convertidas en cambios concretos para este orquestador. Solo ideas: no se copia código ni se instala nada de terceros (varios no tienen licencia, uno es GPL-3.0, y los skills/agentes importados corren con `bash` permitido en modo desatendido).
 
-Estado al 2026-10-17: se implementaron `inmutables` y la vista previa de integración con `git merge-tree --write-tree`; GitHub Actions run #264 aprobó 129 tests. La integración con workers reales, OpenCode/LiteLLM y controles de permisos de Codex siguen pendientes de validar por separado. Cada propuesta es un incremento independiente, con tests y prueba en vivo antes del siguiente.
+Estado al 2026-10-17: `inmutables` y la vista previa de integración están implementados y cubiertos por CI run #264 (129 tests). Se inició P1 con parser conservador de uso JSONL, ledger append-only y CLI de resumen; CI de P1 pendiente. La integración real con workers OpenCode/LiteLLM y el control de permisos de Codex siguen pendientes de validar por separado.
 
 ## Fuentes revisadas
 
@@ -53,13 +53,14 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 **Dato verificado.** El stream `--format json` de OpenCode trae tokens por paso (`step-finish.tokens`). Una corrida real: 18 pasos, 155.214 tokens de entrada y 2.986 de salida. La entrada crece a cada paso porque se reenvía el contexto: es el costo que importa.
 
-**Implementación.**
-- `uso.py` con `resumir_stream(lineas) -> {pasos, entrada, salida, razon_final}` (función pura, testeable con un stream de muestra).
-- El despachador lo aplica a `opencode.jsonl` y a `revision.jsonl`, y agrega `uso` al `estado.json`.
-- Un `runs/historial.jsonl` append-only con una línea por corrida: fecha, proyecto, id, ronda, agente, veredicto, duración, tokens, puntaje de mutación, hallazgos altos del revisor.
-- `historial.py` (CLI) para agrupar por agente o por veredicto: qué agentes fallan más, cuántos tokens cuesta cada tipo de tarea.
+**Implementación inicial en `docs/roadmap-hardening` (CI pendiente).**
+- `uso.py` implementa `resumir_stream(lineas)` y `resumir_archivo(ruta)`, suma tokens por evento `step-finish` y no convierte campos/archivos ausentes en cero.
+- El despachador añade resúmenes del stream de OpenCode y del revisor al estado cuando están disponibles.
+- `historial.py` mantiene `runs/historial.jsonl` append-only con bloqueo exclusivo y `fsync`; registra resultado, duración, tokens conocidos, puntaje de mutación, hallazgos altos y referencia al estado, sin guardar prompts ni diffs.
+- `historial.py --por agente|resultado|proyecto` agrupa registros y muestra cuántas corridas aportan datos para cada métrica.
+- `verificar.sh` incluye los módulos y la ayuda CLI en la comprobación básica.
 
-**Aceptación.** Después de una cola de 3 encargos, `historial.py --por agente` muestra veredictos y tokens, y los totales coinciden con la suma de los `estado.json`.
+**Aceptación.** CI verde con fixtures sintéticas; después, una cola real de tres encargos debe cuadrar con sus `estado.json`. Campos ausentes se mantienen como desconocidos.
 
 **Pendiente de verificar.** Si los eventos indican qué modelo respondió. Si no, el nombre real lo sabe LiteLLM (ver propuesta 9).
 
