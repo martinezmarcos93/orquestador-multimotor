@@ -105,6 +105,24 @@ def parsear_encargo(texto: str) -> dict:
     if cfg["id"] in depende_de:
         raise ValueError("un encargo no puede depender de sí mismo")
     cfg["depende_de"] = depende_de
+    cfg.setdefault("espera_rojo", False)
+    if not isinstance(cfg["espera_rojo"], bool):
+        raise ValueError("'espera_rojo' debe ser booleano")
+    marcadores_rojos = cfg.get("espera_rojo_contiene", [])
+    if not isinstance(marcadores_rojos, list) or any(
+        not isinstance(m, str) or not m.strip() for m in marcadores_rojos
+    ):
+        raise ValueError("'espera_rojo_contiene' debe ser una lista de textos no vacíos")
+    if cfg["espera_rojo"]:
+        if cfg["agente"] != "tester":
+            raise ValueError("'espera_rojo = true' solo se permite con el agente tester")
+        if any(not patron.startswith(("tests/", "test/")) for patron in cfg["permitidos"]):
+            raise ValueError("'espera_rojo = true' requiere que permitidos se limite a tests/** o test/**")
+        if not marcadores_rojos:
+            raise ValueError("'espera_rojo = true' requiere marcadores literales en espera_rojo_contiene")
+    elif marcadores_rojos:
+        raise ValueError("'espera_rojo_contiene' solo se usa con 'espera_rojo = true'")
+    cfg["espera_rojo_contiene"] = marcadores_rojos
     cfg.setdefault("timeout_min", 20)
     if not isinstance(cfg["repo"], str) or not cfg["repo"].strip():
         raise ValueError("'repo' debe ser una ruta no vacía")
