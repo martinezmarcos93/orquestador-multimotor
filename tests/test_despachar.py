@@ -903,6 +903,18 @@ class TestPresupuestoTokens(unittest.TestCase):
         self.assertTrue(resultado["presupuesto_no_verificable"], resultado)
         self.assertEqual(resultado["pasos_sin_tokens"], 1)
 
+    def test_timeout_sigue_funcionando_con_presupuesto_activo(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            resultado = d.ejecutar_opencode_con_presupuesto(
+                [sys.executable, "-u", "-c", "import time; time.sleep(10)"],
+                cwd=root, timeout_s=0.2, salida_jsonl=root / "opencode.jsonl",
+                salida_error=root / "opencode.err", presupuesto_tokens=100, gracia_s=0.2,
+            )
+        self.assertTrue(resultado["timeout"], resultado)
+        self.assertFalse(resultado["presupuesto_agotado"], resultado)
+
     def test_no_permite_budget_sin_eventos_de_tokens(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
