@@ -67,16 +67,17 @@ Rama de trabajo única: `docs/roadmap-hardening`. No crear ramas auxiliares, no 
 - `despachar.py` acepta `inmutables = [...]`, valida que los patrones sean relativos y sin traversal, detecta rutas protegidas modificadas y emite `viola_inmutables`. La comparación de rutas usa `git diff --no-renames` para no ocultar el origen de renombres.
 - Si una entrega obtiene `pasa`, se ejecuta `git merge-tree --write-tree` contra el SHA actual de la base y el HEAD de trabajo. El resultado `integracion_previa` puede ser `limpia`, `conflictos` o `error`; la vista previa no modifica refs ni worktrees. `siguiente_accion` orienta la recuperación.
 - Se añadieron pruebas para parseo/validación de `inmutables`, prioridad del veredicto, integración limpia, conflictos y ausencia de mutaciones en el destino.
-- **Estado de validación:** cambios publicados en esta rama; el resultado de CI de este incremento todavía no está confirmado. No afirmar que las pruebas pasan hasta verificar el workflow.
+- **Estado de validación:** CI run [#370](https://github.com/martinezmarcos93/orquestador-opencode/actions/runs/39078076954) aprobó 158 tests en la punta que incluía los cambios de código; las actualizaciones de documentación posteriores no alteran el código. La integración con un worker real sigue pendiente.
 
-### Próximas unidades, en orden
+### Estado actual y próximas unidades, en orden
 
-1. Completar pruebas de inmutables para borrado/renombre y validar CI.
-2. Historial append-only y extracción de tokens/uso solo cuando los datos estén presentes en JSONL.
-3. Completar el contrato de estado y acciones siguientes; añadir dependencias entre encargos y aceptación automatizada.
-4. Diseñar la política de permisos de OpenCode, bloqueo por defecto fuera de alcance y recuperación persistente de workers.
-5. Diseñar sandbox real del sistema operativo y comprobar home, credenciales, red y escritura fuera del worktree.
-6. Presupuesto de tokens y gestión de modelos fallidos; luego cola desatendida con recuperación tras interrupciones.
+- **CI:** run #370 aprobó 158 tests, incluidos los casos sintéticos de inmutables, integración, ledger/uso, schema v1, cadena test-first y corte de presupuesto.
+- **P1/P2/P5/P6:** implementación inicial presente; falta validación de entorno real y completar contratos/estados de cada retorno temprano.
+1. Ejecutar una cadena real tester → implementador en sandbox y comprobar que el implementador hereda la rama del tester sin tocar tests protegidos.
+2. Validar el formato real del JSONL de OpenCode/LiteLLM y comparar uso/ledger contra tres corridas reales.
+3. Diseñar política de permisos de OpenCode con mínimo privilegio y recuperación persistente de workers.
+4. Diseñar sandbox real del sistema operativo y probar home, credenciales, red y escrituras fuera del worktree.
+5. Añadir cancelación/recuperación durable, cola desatendida y manejo de modelos fallidos después de validar los límites anteriores.
 
 ### Límite de integración Codex
 
