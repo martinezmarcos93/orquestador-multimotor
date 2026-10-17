@@ -273,6 +273,11 @@ def fuera_de_alcance(archivos: list[str], permitidos: list[str]) -> list[str]:
     return [a for a in archivos if not any(r.match(a) for r in regexes)]
 
 
+def archivos_cambiados_desde(base_ref: str, wt: Path) -> list[str]:
+    """Lista rutas cambiadas sin detección de renombres para incluir origen y destino."""
+    return sorted(set(git(wt, "diff", "--name-only", "--no-renames", f"{base_ref}..HEAD").splitlines()))
+
+
 def violaciones_inmutables(archivos: list[str], inmutables: list[str]) -> list[str]:
     """Devuelve archivos cambiados que coinciden con patrones protegidos."""
     regexes = [_glob_a_regex(p) for p in inmutables]
@@ -732,7 +737,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         commits = int(git(wt, "rev-list", "--count", f"{base_ref}..HEAD") or 0)
         # Sin detección de renombres: al mover un archivo protegido, deben verse
         # tanto la ruta de origen como la de destino para no eludir inmutables.
-        cambiados = set(git(wt, "diff", "--name-only", "--no-renames", f"{base_ref}..HEAD").splitlines())
+        cambiados = set(archivos_cambiados_desde(base_ref, wt))
         sucios = listar_sucios(wt)
         cambiados |= set(sucios)
         diff = git(wt, "diff", f"{base_ref}..HEAD", check=False)
