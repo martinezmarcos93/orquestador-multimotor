@@ -56,8 +56,8 @@ Prioridad transversal: abordar antes de ampliar la autonomía.
 
 ## Fase 3 — Calidad y eficiencia de la delegación
 
-- [ ] **P5 Encargos dependientes y ciclo tests → implementación.** Incorporar `depende_de`, `espera_rojo` y `inmutables`; validar grafo acíclico, fallos de dependencias y base de cada etapa.
-  - Aceptación: en sandbox, tester crea tests que fallan por la razón esperada y el implementador los satisface sin alterarlos.
+- [ ] **P5 Encargos dependientes y ciclo tests → implementación.** Implementación inicial: `depende_de` valida IDs únicos, dependencias presentes, mismo proyecto/repositorio, ciclos y una sola rama predecesora; `cola.py` espera al predecesor aprobado y crea un encargo temporal que hereda su rama sin modificar el archivo original. `espera_rojo = true` exige agente tester, alcance de tests y marcadores literales; baseline debe ser verde y el oráculo posterior debe fallar con esos marcadores para producir `tests_preparados`. La cola permite esa etapa intermedia y continúa con el implementador. CI run [#326](https://github.com/martinezmarcos93/orquestador-opencode/actions/runs/39077630312) aprobó 152 tests.
+  - Aceptación pendiente: ejecutar una cadena real tester → implementador en sandbox, comprobar que la rama B parte de A y que el implementador no modifica tests protegidos. No se soportan dependencias múltiples por ahora.
 - [ ] **P6 Presupuesto de tokens con corte en vivo.** Consumir eventos JSONL mientras se ejecuta OpenCode y detener al superar `presupuesto_tokens`; conservar evidencia parcial y terminar con `presupuesto_agotado`.
   - Aceptación: prueba con presupuesto mínimo corta el proceso, deja estado consistente y no pierde logs; timeout sigue funcionando.
 - [ ] **P9 Cooldown de modelos en LiteLLM.** Inspeccionar la versión y configuración instaladas antes de cambiar nada; probar reintentos, cooldown y recuperación de un modelo simulado como fallido.
