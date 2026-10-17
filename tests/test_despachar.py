@@ -98,6 +98,7 @@ class TestMensaje(unittest.TestCase):
 
 class TestPrevisualizacionIntegracion(unittest.TestCase):
     def _git(self, repo, *args):
+        import subprocess
         return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
 
     def _repo(self, root):
