@@ -205,6 +205,67 @@ class TestRunnerSubproceso(unittest.TestCase):
                          [signal.SIGTERM, signal.SIGKILL])
 
 
+class TestDependencias(unittest.TestCase):
+    def test_planifica_predecesor_antes_y_transmite_su_rama(self):
+        primero = enc("1")
+        segundo = enc("2")
+        segundo["cfg"]["depende_de"] = ["1"]
+        lanzados = []
+
+        def runner(e):
+            id_ = e["cfg"]["id"]
+            lanzados.append((id_, e.get("base_dependencia")))
+            if id_ == "1":
+                return {"id": "1", "proyecto": "p", "resultado": "pasa", "rama": "opencode/primero"}
+            return {"id": "2", "proyecto": "p", "resultado": "pasa", "rama": "opencode/segundo"}
+
+        resultados = cola.planificar([segundo, primero], runner, max_paralelo=2)
+        self.assertEqual([id_ for id_, _ in lanzados], ["1", "2"])
+        self.assertIsNone(lanzados[0][1])
+        self.assertEqual(lanzados[1][1], "opencode/primero")
+        self.assertEqual([r["resultado"] for r in resultados], ["pasa", "pasa"])
+
+    def test_no_lanza_dependiente_si_predecesor_falla(self):
+        primero = enc("1")
+        segundo = enc("2")
+        segundo["cfg"]["depende_de"] = ["1"]
+        lanzados = []
+
+        def runner(e):
+            lanzados.append(e["cfg"]["id"])
+            return {"id": e["cfg"]["id"], "proyecto": "p",
+                    "resultado": "falla_oraculo" if e["cfg"]["id"] == "1" else "pasa",
+                    "rama": "opencode/primero"}
+
+        resultados = cola.planificar([primero, segundo], runner, max_paralelo=2)
+        self.assertEqual(lanzados, ["1"])
+        self.assertEqual(next(r for r in resultados if r["id"] == "2")["resultado"], "dependencia_fallida")
+
+    def test_encargo_temporal_cambia_base_sin_alterar_el_original(self):
+        texto = '+++\\nid = "2"\\nproyecto = "p"\\nrepo = "/r"\\nagente = "implementador"\\ntema = "impl"\\nbase = "main"\\npermitidos = ["src/**"]\\noraculo = ["pytest -q"]\\n+++\\n# cuerpo\\n'
+        nuevo = cola._texto_con_base(texto, "opencode/primero")
+        self.assertIn('base = "opencode/primero"', nuevo)
+        self.assertIn('base = "main"', texto)
+        sin_base = texto.replace('base = "main"\\n', "")
+        nuevo_sin_base = cola._texto_con_base(sin_base, "opencode/primero")
+        self.assertIn('base = "opencode/primero"', nuevo_sin_base)
+
+    def test_cargar_rechaza_dependencia_ausente_y_ciclos(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base = '+++\\nid = "{id}"\\nproyecto = "p"\\nrepo = "/repo"\\nagente = "tester"\\ntema = "tema{id}"\\npermitidos = ["tests/**"]\\noraculo = ["pytest -q"]\\n{dep}+++\\n# cuerpo\\n'
+            a = root / "a.md"
+            a.write_text(base.format(id="1", dep='depende_de = ["9"]\\n'), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "no está en esta cola"):
+                cola.cargar([a])
+            a.write_text(base.format(id="1", dep='depende_de = ["2"]\\n'), encoding="utf-8")
+            b = root / "b.md"
+            b.write_text(base.format(id="2", dep='depende_de = ["1"]\\n'), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "ciclo de dependencias"):
+                cola.cargar([a, b])
+
+
 class TestPlanificar(unittest.TestCase):
     def test_respeta_el_maximo_de_paralelismo(self):
         s = Sonda()
