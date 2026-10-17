@@ -39,7 +39,9 @@ No tiene dependencias externas: solo la librería estándar.
    agente = "tester"
    tema = "tests-nucleo"
    base = "main"
-   permitidos = ["tests/**"]
+   permitidos = ["src/**", "tests/**"]
+   # Opcional: bloquear cualquier modificación, borrado o renombre de tests existentes
+   inmutables = ["tests/**"]
    oraculo = [".venv/bin/python -m pytest -q"]
    timeout_min = 20
    # Solo si el oráculo necesita usar el entorno del repo original (reduce aislamiento):
@@ -69,7 +71,7 @@ No tiene dependencias externas: solo la librería estándar.
 La CLI valida automáticamente repo, referencia base, tipos de configuración y agentes instalados antes de despachar o revisar. `--validar` no crea worktree ni ejecuta oráculos o modelos. Los oráculos tienen un timeout por comando y, al agotarse, se termina su grupo de procesos. Un worktree reutilizado con cambios sin commitear se bloquea para evitar mezclar trabajo anterior.
    ```
 
-4. **Leé el veredicto** en `runs/<proyecto>-<id>/ronda-N/estado.json`, revisá el diff y decidí.
+4. **Leé el veredicto** en `runs/<proyecto>-<id>/ronda-N/estado.json`, revisá el diff y decidí. Si el resultado es `pasa`, la vista previa `integracion_previa` informa si la combinación con la base actual parece limpia o tiene conflictos; es solo lectura y no hace merge.
 
 ### Veredictos
 
@@ -82,6 +84,7 @@ La CLI valida automáticamente repo, referencia base, tipos de configuración y 
 | `falla_oraculo` | Los tests no pasan | Nueva ronda con feedback concreto |
 | `sin_cambios` / `trabajo_sin_commitear` | No hizo nada, o dejó cambios sueltos | Nueva ronda o los commitea |
 | `fuera_de_alcance` | Tocó archivos no permitidos | Descarta o devuelve sin leer el diff |
+| `viola_inmutables` | Modificó, borró o renombró una ruta protegida | Rechaza la entrega y restaura los archivos protegidos |
 | `dependencia_nueva` / `posible_secreto` | Cambió dependencias o metió algo sensible | Descarta |
 | `timeout` / `error_opencode` | Cuota, proxy o modelo colgado | Revisa `opencode.err` |
 | `worktree_reutilizado_sucio` | El worktree conserva cambios sin commitear de una corrida anterior | Preserva o limpia explícitamente esos cambios antes de reintentar |
