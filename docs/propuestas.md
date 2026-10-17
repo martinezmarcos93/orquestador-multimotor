@@ -2,7 +2,7 @@
 
 Ideas rescatadas de proyectos similares, convertidas en cambios concretos para este orquestador. Solo ideas: no se copia código ni se instala nada de terceros (varios no tienen licencia, uno es GPL-3.0, y los skills/agentes importados corren con `bash` permitido en modo desatendido).
 
-Estado al 2026-10-14: se amplió el preflight para comprobar el ejecutable inicial del oráculo cuando es inferible; se añadieron timeout por comando de oráculo, bloqueo de worktrees reutilizados sucios, mejoras de concurrencia/trazabilidad de la cola y estado v1 con timestamps/acción siguiente. La tanda nueva de CI está pendiente de confirmación; el entorno real de OpenCode/LiteLLM queda para Claude/Marcos. Cada propuesta es un incremento independiente, con tests y prueba en vivo antes del siguiente.
+Estado al 2026-10-17: además del preflight, timeouts, worktrees y estado v1, la rama implementa una primera versión de `inmutables` y vista previa de integración con `git merge-tree --write-tree`. Los tests nuevos y la ejecución CI de este incremento están pendientes de confirmación. El entorno real de OpenCode/LiteLLM y el control de permisos de Codex quedan por validar por separado. Cada propuesta es un incremento independiente, con tests y prueba en vivo antes del siguiente.
 
 ## Fuentes revisadas
 
@@ -84,7 +84,7 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 **Problema.** "No aflojar asserts" y "no tocar los tests" hoy son una instrucción en el prompt, que un modelo gratuito puede ignorar.
 
-**Implementación.** Un campo opcional `inmutables = ["tests/**"]` en el encargo. El despachador compara esos archivos contra la base: cualquier cambio da el veredicto `viola_inmutables`, igual que `fuera_de_alcance`. Es una variante de `fuera_de_alcance` que ya existe (`fuera_de_alcance()` con otra lista), así que son unas 20 líneas.
+**Implementación.** Un campo opcional `inmutables = ["tests/**"]` en el encargo. El despachador compara rutas modificadas contra la base y bloquea con `viola_inmutables`; se usa `git diff --no-renames` para detectar ambos extremos de un movimiento. Los patrones se validan como rutas relativas sin traversal. Implementación inicial en `docs/roadmap-hardening`; falta confirmar CI y ampliar pruebas de borrado/renombre.
 
 **Aceptación.** Un `implementador` que modifica un test existente queda rechazado sin leer el diff.
 
@@ -128,7 +128,7 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 **Origen.** Disciplina de "merge-conflict safety" de `dirigent-skills`, sin el agente que mergea.
 
-**Implementación.** Al terminar con `pasa`, `git merge-tree --write-tree base rama` (solo lectura) y se guarda `integracion: {conflictos: [archivos]}` en el estado. El merge sigue siendo tuyo; llegás sabiendo si va a chocar. En la práctica real los tres `REPORTE.md` chocaron: esto lo habría avisado.
+**Implementación.** Al terminar con `pasa`, `git merge-tree --write-tree <base_sha_actual> <head_sha_trabajo>` (solo lectura) registra `integracion_previa` con estado `limpia`, `conflictos` o `error`, hashes de entrada y diagnóstico. Si detecta conflictos, `siguiente_accion` pide resolverlos antes de integrar. El merge sigue siendo humano; la vista previa no modifica refs ni worktrees. Implementación inicial en `docs/roadmap-hardening`; CI pendiente.
 
 ## 8. Cola nocturna con systemd
 
