@@ -871,8 +871,8 @@ class TestCodexRunner(unittest.TestCase):
             wt = repo / "worktree"
             wt.mkdir()
             prompt = d.mensaje_para_codex(ENCARGO, wt, repo, "tester")
-        self.assertIn("trabajador tester", prompt)
-        self.assertIn("SOLO escribe tests", prompt)
+        self.assertIn("trabajador `tester`", prompt)
+        self.assertIn("Escribís únicamente tests nuevos", prompt)
         self.assertNotIn("permission:", prompt)
         self.assertIn(str(wt), prompt)
 
