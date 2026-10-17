@@ -730,7 +730,7 @@ def mensaje_para_codex(texto_encargo: str, wt: Path, repo: Path, agente: str) ->
 def comando_codex() -> list[str]:
     """Codex CLI en sandbox workspace-write, sin prompts interactivos."""
     return [
-        "codex", "exec", "--sandbox", "workspace-write", "--ask-for-approval", "never",
+        "codex", "exec", "--approve-for-me",
         "--config", "sandbox_workspace_write.writable_roots=[]",
         "--config", "sandbox_workspace_write.network_access=false",
         "--json", "-",
