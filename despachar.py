@@ -24,6 +24,8 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 import mutacion
+import uso
+import historial
 import visor as visor_herdr
 
 logger = logging.getLogger("despachar")
@@ -732,6 +734,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                     rc = -1
                     logger.error("OpenCode excedió %s min; se terminó el grupo de procesos", cfg["timeout_min"])
             estado["duracion_s"] = round(time.time() - t0)
+            estado["uso"] = uso.resumir_archivo(run / "opencode.jsonl")
 
         base_ref = sha_base_main
         commits = int(git(wt, "rev-list", "--count", f"{base_ref}..HEAD") or 0)
@@ -801,6 +804,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                 etapa(run, "revisor (solo lectura)")
                 logger.info("etapa de revisión (solo lectura)")
                 estado["revision"] = revisar(cfg, texto, wt, run, base_ref)
+                estado["uso_revision"] = uso.resumir_archivo(run / "revision.jsonl")
                 estado["aprobacion"] = aprobar_revision(estado["revision"])
             else:
                 estado["aprobacion"] = "bloqueado_por_resultado_tecnico"
@@ -959,9 +963,18 @@ def main() -> int:
         estado["resultado"] = "error_estado_invalido"
         estado["errores_estado_schema"] = errores_esquema
         estado["siguiente_accion"] = "Corregir la construcción del estado antes de confiar en el veredicto."
+    destino = None
     if estado.get("run"):
         destino = Path(estado["run"]) / "estado.json"
         estado["estado_json"] = str(destino)
+    try:
+        historial.registrar_estado(estado, RUNS / "historial.jsonl")
+        estado["historial_registrado"] = True
+    except Exception as exc:
+        logger.exception("no se pudo anexar el historial de corridas")
+        estado["historial_registrado"] = False
+        estado["historial_error"] = str(exc)
+    if destino:
         destino.write_text(json.dumps(estado, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(estado, indent=2, ensure_ascii=False))
     return 0 if (estado.get("resultado") in ("pasa", "dry_run", "revision_manual")
