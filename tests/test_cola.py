@@ -70,8 +70,11 @@ class TestAprobacionFinal(unittest.TestCase):
         self.assertTrue(cola.todos_aprobados([{"resultado": "pasa"}]))
 
 
-    def test_etapa_tests_preparados_es_intermedia_y_aprobada(self):
-        self.assertTrue(cola.todos_aprobados([{"resultado": "tests_preparados"}]))
+    def test_etapa_tests_preparados_debe_ser_consumida_por_un_dependiente_aprobado(self):
+        etapa = {"id": "1", "proyecto": "p", "resultado": "tests_preparados"}
+        self.assertFalse(cola.todos_aprobados([etapa]))
+        cadena = [etapa, {"id": "2", "proyecto": "p", "depende_de": ["1"], "resultado": "pasa"}]
+        self.assertTrue(cola.todos_aprobados(cadena))
         self.assertFalse(cola.todos_aprobados([{"resultado": "tests_no_fallan"}]))
 
     def test_revision_con_observaciones_bloquea_exito_de_cola(self):
