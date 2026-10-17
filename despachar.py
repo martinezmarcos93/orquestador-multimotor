@@ -569,6 +569,8 @@ def ejecutar_opencode_con_presupuesto(cmd: list[str], *, cwd: Path, timeout_s: f
             motivo = "presupuesto_agotado"
         if motivo is None and (uso_desconocido_evento.is_set() or estadisticas["pasos"] == 0):
             motivo = "presupuesto_no_verificable"
+        if proc.stdout is not None:
+            proc.stdout.close()
         return {
             "codigo_salida": proc.returncode if proc.returncode is not None else -1,
             "motivo": motivo,
