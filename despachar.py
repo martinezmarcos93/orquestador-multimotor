@@ -296,6 +296,7 @@ def validar_encargo(ruta_encargo: Path, directorio_agentes: Path | None = None, 
         "id": cfg["id"],
         "proyecto": cfg["proyecto"],
         "agente": cfg["agente"],
+        "motor": cfg["motor"],
         "repo": str(repo),
         "base": cfg["base"],
         "errores": errores,
@@ -726,6 +727,11 @@ def mensaje_para_codex(texto_encargo: str, wt: Path, repo: Path, agente: str) ->
     )
 
 
+def comando_codex() -> list[str]:
+    """Codex CLI en sandbox workspace-write, sin prompts interactivos."""
+    return ["codex", "exec", "--sandbox", "workspace-write", "--ask-for-approval", "never", "--json", "-"]
+
+
 def mensaje_para_trabajador(cfg: dict, texto_encargo: str, wt: Path, repo: Path) -> str:
     if cfg.get("motor", "opencode") == "codex":
         return mensaje_para_codex(texto_encargo, wt, repo, cfg["agente"])
@@ -955,7 +961,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
             etapa(run, f"{cfg['motor']} trabajando (máx {cfg['timeout_min']} min)")
             mensaje = mensaje_para_trabajador(cfg, texto, wt, repo)
             if cfg["motor"] == "codex":
-                cmd = ["codex", "exec", "--sandbox", "workspace-write", "--ask-for-approval", "never", "--json", "-"]
+                cmd = comando_codex()
             else:
                 cmd = ["opencode", "run", "--agent", cfg["agente"], "--dir", str(wt), "--format", "json",
                        "--title", f"enc-{cfg['id']}-r{ronda}", mensaje]
@@ -1075,6 +1081,8 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                                             and resumen_mut.get("total", 0) == 0
                                         )),
         )
+        if cfg["motor"] == "codex" and estado["resultado"] == "error_opencode":
+            estado["resultado"] = "error_codex"
         if cfg.get("espera_rojo"):
             texto_oraculo_despues = ""
             if log_oraculo.exists() and "offset_oraculo_despues" in locals():
