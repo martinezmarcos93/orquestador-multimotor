@@ -94,6 +94,17 @@ def parsear_encargo(texto: str) -> dict:
         mut.setdefault("umbral", 0.8)
         mut.setdefault("max", 80)
     cfg.setdefault("base", "main")
+    depende_de = cfg.get("depende_de", [])
+    if not isinstance(depende_de, list) or any(
+        not isinstance(dep, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", dep)
+        for dep in depende_de
+    ):
+        raise ValueError("'depende_de' debe ser una lista de IDs de encargo válidos")
+    if len(depende_de) != len(set(depende_de)):
+        raise ValueError("'depende_de' no puede repetir IDs")
+    if cfg["id"] in depende_de:
+        raise ValueError("un encargo no puede depender de sí mismo")
+    cfg["depende_de"] = depende_de
     cfg.setdefault("timeout_min", 20)
     if not isinstance(cfg["repo"], str) or not cfg["repo"].strip():
         raise ValueError("'repo' debe ser una ruta no vacía")
