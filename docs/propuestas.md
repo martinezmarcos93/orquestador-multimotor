@@ -119,11 +119,18 @@ Un hook `pre-push` opcional ejecuta solo el paso 1.
 
 ## 6. Presupuesto de tokens con corte en vivo
 
-**Hueco real.** Hoy el único límite es `timeout_min`.
+**Hueco real.** El timeout por duración no limita el consumo de tokens; una tarea puede agotar la cuota antes de llegar al timeout.
 
-**Implementación.** Campo `presupuesto_tokens = 400000` (entrada). El despachador deja de redirigir stdout a un archivo y lo lee en vivo con `Popen`, sumando `step-finish.tokens`; si se supera, termina el proceso y da el veredicto `presupuesto_agotado` (el trabajo hecho hasta ahí se conserva para evaluarlo). Con la propuesta 1, el presupuesto por defecto sale del historial (percentil 90 de tareas similares).
+**Implementación inicial en docs/roadmap-hardening (CI pendiente).**
+- Campo opcional presupuesto_tokens, entero positivo, mide tokens de entrada.
+- Cuando está configurado, el despachador lee stdout JSONL en vivo, persiste cada línea y suma input en eventos step-finish.
+- Al alcanzar el límite, termina el grupo de procesos, conserva el stream parcial y emite presupuesto_agotado.
+- Si faltan eventos/campos para verificar el consumo, detiene el worker y emite presupuesto_no_verificable; no trata datos ausentes como cero.
+- El estado distingue tokens_entrada_observados de tokens_entrada_parcial y guarda el presupuesto configurado. El historial incluye presupuesto y resultado.
+- El timeout por duración sigue vigente; si no se configura presupuesto, se conserva el camino de ejecución previo.
 
-**Aceptación.** Un trabajador de prueba con presupuesto bajo se corta con el veredicto correcto y el estado queda consistente.
+**Aceptación pendiente.** CI verde sin ResourceWarning/fugas; tests sintéticos de corte, stream incompleto y timeout; después, verificar que el formato de eventos de la versión instalada de OpenCode/LiteLLM expone los tokens esperados. No hay aún una corrida real con cuota limitada.
+
 
 ## 7. Vista previa de integración
 
