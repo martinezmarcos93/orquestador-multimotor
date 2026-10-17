@@ -404,6 +404,52 @@
         }
       },
       "additionalProperties": true
+    },
+    "presupuesto_tokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "tokens_entrada_observados": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "presupuesto_agotado": {
+      "type": "boolean"
+    },
+    "presupuesto_no_verificable": {
+      "type": "boolean"
+    },
+    "pasos_observados": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "pasos_sin_tokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "espera_rojo": {
+      "type": "boolean"
+    },
+    "depende_de": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "espera_rojo_contiene": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "error_lector_jsonl": {
+      "type": "string"
     }
   },
   "additionalProperties": true
