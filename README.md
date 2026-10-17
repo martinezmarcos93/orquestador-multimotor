@@ -42,6 +42,8 @@ No tiene dependencias externas: solo la librería estándar.
    permitidos = ["tests/**"]
    oraculo = [".venv/bin/python -m pytest -q"]
    timeout_min = 20
+   # Opcional: usar Codex CLI sin prompts, en sandbox workspace-write
+   # motor = "codex"
    # Opcional: presupuesto máximo de tokens de entrada, vigilado durante la ejecución
    # presupuesto_tokens = 400000
    # Solo si el oráculo necesita usar el entorno del repo original (reduce aislamiento):
@@ -75,6 +77,7 @@ No tiene dependencias externas: solo la librería estándar.
 
 La CLI valida automáticamente repo, referencia base, tipos de configuración y agentes instalados antes de despachar o revisar. `--validar` no crea worktree ni ejecuta oráculos o modelos. Los oráculos tienen un timeout por comando y, al agotarse, se termina su grupo de procesos. Un worktree reutilizado con cambios sin commitear se bloquea para evitar mezclar trabajo anterior.
 Cada corrida añade un registro compacto a `runs/historial.jsonl`. El uso se extrae de eventos `step-finish` presentes en JSONL; si faltan datos, se muestran como desconocidos y no como cero. El ledger no guarda prompts ni diffs.
+El backend predeterminado es OpenCode. Con `motor = "codex"`, el despachador ejecuta Codex CLI mediante `codex exec --sandbox workspace-write --ask-for-approval never --json -`: no aparecen prompts interactivos; las operaciones fuera del sandbox fallan cerradas en vez de escalarse. Esta opción no controla sesiones abiertas manualmente en Codex Desktop/IDE. `presupuesto_tokens` todavía no es compatible con el stream JSONL de Codex y se rechaza en preflight.
    ```
 
 4. **Leé el veredicto** en `runs/<proyecto>-<id>/ronda-N/estado.json`, revisá el diff y decidí. Si el resultado es `pasa`, la vista previa `integracion_previa` informa si la combinación con la base actual parece limpia o tiene conflictos; es solo lectura y no hace merge.
@@ -97,6 +100,7 @@ Cada corrida añade un registro compacto a `runs/historial.jsonl`. El uso se ext
 | `dependencia_nueva` / `posible_secreto` | Cambió dependencias o metió algo sensible | Descarta |
 | `presupuesto_agotado` | Alcanzó `presupuesto_tokens` | Conserva la entrega parcial y evalúa si corresponde ampliar el límite |
 | `presupuesto_no_verificable` | El stream no permite medir tokens de entrada | Se detiene por seguridad; verifica el formato JSONL y la versión de OpenCode |
+| `error_codex` | Codex CLI falló o una operación fue bloqueada por workspace-write | Revisar `opencode.err`; no se habilitan permisos más amplios automáticamente |
 | `timeout` / `error_opencode` | Cuota, proxy o modelo colgado | Revisa `opencode.err` |
 | `worktree_reutilizado_sucio` | El worktree conserva cambios sin commitear de una corrida anterior | Preserva o limpia explícitamente esos cambios antes de reintentar |
 | `tope_rondas` | Ya hubo 2 rondas del mismo encargo | Lo toma Claude |
