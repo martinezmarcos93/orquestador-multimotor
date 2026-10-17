@@ -694,6 +694,37 @@ class TestAlcance(unittest.TestCase):
             ["README.md"],
         )
 
+    def test_diff_sin_renombres_detecta_origen_destino_y_borrados(self):
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "test"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=repo, check=True)
+            (repo / "tests").mkdir()
+            (repo / "src").mkdir()
+            (repo / "tests" / "renombrado.py").write_text("a = 1\n", encoding="utf-8")
+            (repo / "tests" / "borrado.py").write_text("b = 2\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+            base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True,
+                                  capture_output=True, text=True).stdout.strip()
+            subprocess.run(["git", "mv", "tests/renombrado.py", "src/renombrado.py"], cwd=repo, check=True)
+            (repo / "tests" / "borrado.py").unlink()
+            subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "move and delete"], cwd=repo, check=True)
+
+            cambiados = d.archivos_cambiados_desde(base, repo)
+
+            self.assertEqual(set(cambiados), {
+                "tests/renombrado.py", "src/renombrado.py", "tests/borrado.py",
+            })
+            self.assertEqual(
+                d.violaciones_inmutables(cambiados, ["tests/**"]),
+                ["tests/borrado.py", "tests/renombrado.py"],
+            )
+
 
 class TestVeredicto(unittest.TestCase):
     base = dict(timeout=False, rc_opencode=0, commits=1, sucios=[], fuera=[], oraculo_ok=True,
