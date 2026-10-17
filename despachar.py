@@ -708,6 +708,47 @@ def mensaje_para_opencode(texto_encargo: str, wt: Path, repo: Path | None = None
             f"--- ENCARGO ---\n{cuerpo}")
 
 
+def mensaje_para_codex(texto_encargo: str, wt: Path, repo: Path, agente: str) -> str:
+    """Incluye las instrucciones del rol local; Codex no depende de la instalación de agentes OpenCode."""
+    ruta_rol = RAIZ / "agents" / f"{agente}.md"
+    texto_rol = ruta_rol.read_text(encoding="utf-8")
+    coincidencia = re.match(r"\A---\s*\n.*?\n---\s*\n(.*)\Z", texto_rol, re.S)
+    cuerpo_rol = coincidencia.group(1).strip() if coincidencia else texto_rol.strip()
+    cuerpo = cuerpo_encargo(texto_encargo).replace(str(repo), str(wt))
+    return (
+        f"Actuás como trabajador {agente} bajo supervisión del orquestador. "
+        f"Trabajá exclusivamente en el worktree {wt}; no accedas a rutas externas. "
+        "La ejecución está aislada con sandbox workspace-write y sin solicitudes interactivas de aprobación. "
+        "Si una operación es bloqueada por el sandbox, no intentes eludirlo: informá el bloqueo en tu entrega. "
+        "No hagas push, despliegues ni escribas en sistemas externos.\n\n"
+        f"--- INSTRUCCIONES DEL ROL ---\n{cuerpo_rol}\n\n"
+        f"--- ENCARGO ---\n{cuerpo}"
+    )
+
+
+def ejecutar_codex_con_timeout(cmd: list[str], mensaje: str, *, cwd: Path, timeout_s: float,
+                                stdout, stderr) -> tuple[int, bool]:
+    """Ejecuta Codex CLI sin prompts de aprobación, dentro de workspace-write y con timeout."""
+    proc = subprocess.Popen(
+        cmd, cwd=cwd, stdin=subprocess.PIPE, stdout=stdout, stderr=stderr,
+        text=True, encoding="utf-8", start_new_session=True,
+    )
+    try:
+        proc.stdin.write(mensaje)
+        proc.stdin.flush()
+        proc.stdin.close()
+    except (BrokenPipeError, OSError):
+        if proc.stdin and not proc.stdin.closed:
+            proc.stdin.close()
+    inicio = time.monotonic()
+    while proc.poll() is None:
+        if time.monotonic() - inicio >= timeout_s:
+            _terminar_grupo(proc, 5)
+            return -1, True
+        time.sleep(0.05)
+    return proc.returncode, False
+
+
 def texto_final_de_eventos(lineas) -> str:
     """Texto de la respuesta final del agente a partir del stream --format json de OpenCode."""
     textos = []
