@@ -153,6 +153,11 @@ def parsear_encargo(texto: str) -> dict:
             raise ValueError(f"'{campo}' debe ser booleano")
     if not isinstance(cfg["timeout_min"], int) or isinstance(cfg["timeout_min"], bool) or cfg["timeout_min"] < 1:
         raise ValueError("'timeout_min' debe ser un entero positivo")
+    presupuesto_tokens = cfg.get("presupuesto_tokens")
+    if presupuesto_tokens is not None and (
+        not isinstance(presupuesto_tokens, int) or isinstance(presupuesto_tokens, bool) or presupuesto_tokens < 1
+    ):
+        raise ValueError("'presupuesto_tokens' debe ser un entero positivo")
     cfg.setdefault("timeout_cola_min", cfg["timeout_min"] + 30)
     if (not isinstance(cfg["timeout_cola_min"], int) or isinstance(cfg["timeout_cola_min"], bool)
             or cfg["timeout_cola_min"] <= cfg["timeout_min"]):
@@ -319,6 +324,7 @@ def violaciones_inmutables(archivos: list[str], inmutables: list[str]) -> list[s
 def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: list[str],
                       fuera: list[str], oraculo_ok: bool, dependencias: list[str], secretos: bool,
                       inmutables: list[str] | None = None,
+                      presupuesto_agotado: bool = False, presupuesto_no_verificable: bool = False,
                       puntaje_mutacion: float | None = None, umbral_mutacion: float = 0.0,
                       error_mutacion: bool = False, sin_candidatos_mutacion: bool = False) -> str:
     """Veredicto único; el orden es el de gravedad."""
@@ -330,6 +336,10 @@ def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: 
         return "fuera_de_alcance"
     if dependencias:
         return "dependencia_nueva"
+    if presupuesto_no_verificable:
+        return "presupuesto_no_verificable"
+    if presupuesto_agotado:
+        return "presupuesto_agotado"
     if timeout:
         return "timeout"
     if commits == 0 and not sucios:
@@ -478,6 +488,7 @@ def _terminar_grupo(proc, gracia_s: float = 5) -> None:
         pass
     limite = time.monotonic() + gracia_s
     while time.monotonic() < limite:
+        proc.poll()
         try:
             os.killpg(proc.pid, 0)
         except ProcessLookupError:
