@@ -88,7 +88,12 @@ def resumir_stream(lineas: Iterable[str]) -> dict:
         "razon_final": razon_final,
     }
     for campo in CAMPOS:
-        resumen[campo] = totales[campo] if vistos[campo] else None
+        # Un total parcial se omite para no presentarlo como el consumo completo.
+        resumen[campo] = (
+            totales[campo]
+            if eventos_con_tokens > 0 and vistos[campo] == eventos_con_tokens
+            else None
+        )
     if not disponible:
         resumen["motivo"] = "sin_eventos_step_finish_con_tokens"
     return resumen
