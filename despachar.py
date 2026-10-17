@@ -457,6 +457,40 @@ def base_es_ancestro(base_sha: str, wt: Path) -> bool:
     return r.returncode == 0
 
 
+def previsualizar_integracion(repo: Path, base_destino_sha: str, head_trabajo_sha: str) -> dict:
+    """Simula la integración con git merge-tree sin modificar refs ni worktrees."""
+    comando = ["git", "-C", str(repo), "merge-tree", "--write-tree",
+               base_destino_sha, head_trabajo_sha]
+    try:
+        proc = subprocess.run(comando, capture_output=True, text=True, encoding="utf-8", timeout=30)
+    except subprocess.TimeoutExpired:
+        return {"estado": "error", "error": "git merge-tree excedió 30 segundos"}
+    except OSError as exc:
+        return {"estado": "error", "error": f"no se pudo ejecutar git merge-tree: {exc}"}
+
+    salida = (proc.stdout or "") + (proc.stderr or "")
+    conflictos = set()
+    for linea in salida.splitlines():
+        coincidencia = re.search(r"CONFLICT[^:]*:\\s*(.+)$", linea)
+        if coincidencia:
+            detalle = coincidencia.group(1).strip()
+            ruta = re.search(r"(?:Merge conflict in | in )(.+)$", detalle)
+            conflictos.add((ruta.group(1) if ruta else detalle).strip())
+    if proc.returncode == 0:
+        lineas = (proc.stdout or "").splitlines()
+        tree_sha = lineas[0].strip() if lineas and re.fullmatch(r"[0-9a-f]{40,64}", lineas[0].strip()) else None
+        return {"estado": "limpia", "conflictos": [], "tree_sha": tree_sha,
+                "codigo_salida": 0, "base_destino_sha": base_destino_sha,
+                "head_trabajo_sha": head_trabajo_sha}
+    if proc.returncode == 1 and "fatal:" not in salida.lower() and "usage:" not in salida.lower():
+        return {"estado": "conflictos", "conflictos": sorted(conflictos),
+                "codigo_salida": 1, "base_destino_sha": base_destino_sha,
+                "head_trabajo_sha": head_trabajo_sha, "detalle": salida[-4000:]}
+    return {"estado": "error", "codigo_salida": proc.returncode,
+            "base_destino_sha": base_destino_sha, "head_trabajo_sha": head_trabajo_sha,
+            "error": salida[-4000:] or "git merge-tree falló sin diagnóstico"}
+
+
 ENTORNOS = (".venv", "node_modules")
 
 
@@ -744,6 +778,9 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                                             and resumen_mut.get("total", 0) == 0
                                         )),
         )
+        if estado["resultado"] == "pasa":
+            etapa(run, "vista previa de integración (solo lectura)")
+            estado["integracion_previa"] = previsualizar_integracion(repo, base_sha_fin, head_fin)
         estado["aprobacion"] = "no_requerida"
         if cfg.get("revisor"):
             if estado["resultado"] in ("pasa", "tests_debiles"):
@@ -830,6 +867,10 @@ def normalizar_estado(estado: dict, inicio_utc: str) -> dict:
     aprobacion = estado.get("aprobacion", "no_requerida")
     if resultado == "revision_manual" and aprobacion == "revision_error" and estado.get("revision", {}).get("archivos_sucios"):
         estado["siguiente_accion"] = "Commitear o descartar explícitamente los cambios antes de pedir revisión."
+    elif estado.get("integracion_previa", {}).get("estado") == "conflictos":
+        estado["siguiente_accion"] = "Resolver los conflictos indicados por integracion_previa y repetir la vista previa antes de integrar."
+    elif estado.get("integracion_previa", {}).get("estado") == "error":
+        estado["siguiente_accion"] = "Revisar el diagnóstico de integracion_previa; no asumir que la integración es limpia."
     elif aprobacion not in ("no_requerida", "aprobado") and resultado in ("pasa", "revision_manual"):
         estado["siguiente_accion"] = "Resolver el bloqueo del revisor antes de integrar; consultar el detalle de revision."
     else:
