@@ -271,9 +271,18 @@ def validar_encargo(ruta_encargo: Path, directorio_agentes: Path | None = None, 
         if base.returncode != 0:
             errores.append(f"la referencia base '{cfg['base']}' no existe en el repositorio")
     agentes = directorio_agentes or (Path.home() / ".config" / "opencode" / "agents")
-    requeridos = ["revisor"] if solo_revisor else [cfg["agente"]]
-    if not solo_revisor and cfg.get("revisor"):
-        requeridos.append("revisor")
+    if solo_revisor:
+        requeridos = ["revisor"]
+    elif cfg["motor"] == "codex":
+        requeridos = ["revisor"] if cfg.get("revisor") else []
+        if shutil.which("codex") is None:
+            errores.append("no se encuentra el ejecutable codex; se requiere Codex CLI para motor = 'codex'")
+        if not (RAIZ / "agents" / f"{cfg['agente']}.md").is_file():
+            errores.append(f"no existe la definición de rol local agents/{cfg['agente']}.md para Codex")
+    else:
+        requeridos = [cfg["agente"]]
+        if cfg.get("revisor"):
+            requeridos.append("revisor")
     for agente in requeridos:
         if not (agentes / f"{agente}.md").is_file():
             errores.append(f"el agente '{agente}' no está instalado en {agentes}")
