@@ -471,7 +471,7 @@ def previsualizar_integracion(repo: Path, base_destino_sha: str, head_trabajo_sh
     salida = (proc.stdout or "") + (proc.stderr or "")
     conflictos = set()
     for linea in salida.splitlines():
-        coincidencia = re.search(r"CONFLICT[^:]*:\\s*(.+)$", linea)
+        coincidencia = re.search(r"CONFLICT[^:]*:\s*(.+)$", linea)
         if coincidencia:
             detalle = coincidencia.group(1).strip()
             ruta = re.search(r"(?:Merge conflict in | in )(.+)$", detalle)
