@@ -726,6 +726,12 @@ def mensaje_para_codex(texto_encargo: str, wt: Path, repo: Path, agente: str) ->
     )
 
 
+def mensaje_para_trabajador(cfg: dict, texto_encargo: str, wt: Path, repo: Path) -> str:
+    if cfg.get("motor", "opencode") == "codex":
+        return mensaje_para_codex(texto_encargo, wt, repo, cfg["agente"])
+    return mensaje_para_opencode(texto_encargo, wt, repo)
+
+
 def ejecutar_codex_con_timeout(cmd: list[str], mensaje: str, *, cwd: Path, timeout_s: float,
                                 stdout, stderr) -> tuple[int, bool]:
     """Ejecuta Codex CLI sin prompts de aprobación, dentro de workspace-write y con timeout."""
@@ -879,7 +885,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
     estado = {
         "id": cfg["id"], "proyecto": cfg["proyecto"], "agente": cfg["agente"], "ronda": ronda,
         "presupuesto_tokens": cfg.get("presupuesto_tokens"), "depende_de": cfg.get("depende_de", []),
-        "espera_rojo": cfg.get("espera_rojo", False),
+        "espera_rojo": cfg.get("espera_rojo", False), "motor": cfg.get("motor", "opencode"),
     }
     if ronda > MAX_RONDAS and not reevaluar:
         estado["resultado"] = "tope_rondas"
@@ -920,7 +926,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
             return estado
         if dry_run:
             estado["resultado"] = "dry_run"
-            estado["mensaje"] = mensaje_para_opencode(texto, wt, repo)
+            estado["mensaje"] = mensaje_para_trabajador(cfg, texto, wt, repo)
             estado["head_sha_fin"] = git(wt, "rev-parse", "HEAD")
             estado["base_sha_actual_fin"] = git(repo, "rev-parse", cfg["base"])
             estado["base_movida"] = estado["base_sha_actual_fin"] != sha_base_main
@@ -946,11 +952,23 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                 )
                 return estado
 
-            etapa(run, f"OpenCode trabajando (máx {cfg['timeout_min']} min)")
-            cmd = ["opencode", "run", "--agent", cfg["agente"], "--dir", str(wt), "--format", "json",
-                   "--title", f"enc-{cfg['id']}-r{ronda}", mensaje_para_opencode(texto, wt, repo)]
-            logger.info("lanzando: %s", shlex.join(cmd[:8]))
-            if cfg.get("presupuesto_tokens") is not None:
+            etapa(run, f"{cfg['motor']} trabajando (máx {cfg['timeout_min']} min)")
+            mensaje = mensaje_para_trabajador(cfg, texto, wt, repo)
+            if cfg["motor"] == "codex":
+                cmd = ["codex", "exec", "--sandbox", "workspace-write", "--ask-for-approval", "never", "--json", "-"]
+            else:
+                cmd = ["opencode", "run", "--agent", cfg["agente"], "--dir", str(wt), "--format", "json",
+                       "--title", f"enc-{cfg['id']}-r{ronda}", mensaje]
+            logger.info("lanzando worker motor=%s: %s", cfg["motor"], shlex.join(cmd[:8]))
+            if cfg["motor"] == "codex":
+                with (run / "opencode.jsonl").open("w", encoding="utf-8") as out, \
+                     (run / "opencode.err").open("w", encoding="utf-8") as err:
+                    rc, timeout = ejecutar_codex_con_timeout(
+                        cmd, mensaje, cwd=wt, timeout_s=cfg["timeout_min"] * 60, stdout=out, stderr=err
+                    )
+                    if timeout:
+                        rc = -1
+            elif cfg.get("presupuesto_tokens") is not None:
                 monitor = ejecutar_opencode_con_presupuesto(
                     cmd, cwd=wt, timeout_s=cfg["timeout_min"] * 60,
                     salida_jsonl=run / "opencode.jsonl", salida_error=run / "opencode.err",
