@@ -21,6 +21,8 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import procesos
+
 logger = logging.getLogger("mutacion")
 
 CMP = {ast.Lt: ast.LtE, ast.LtE: ast.Lt, ast.Gt: ast.GtE, ast.GtE: ast.Gt,
@@ -136,7 +138,7 @@ def _correr(comandos: list[str], cwd: Path, timeout: int | float, gracia_s: floa
     """True si TODOS los comandos pasan; al timeout termina el grupo y sus descendientes."""
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     for cmd in comandos:
-        proc = subprocess.Popen(
+        proc = procesos.lanzar(
             cmd, shell=True, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env=env, start_new_session=True,
         )

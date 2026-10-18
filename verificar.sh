@@ -29,7 +29,7 @@ print(f"Python {sys.version.split()[0]}: OK")
 PY
 
 echo "== Compilación Python =="
-python3 -m py_compile despachar.py cola.py mutacion.py uso.py historial.py ver.py visor.py sandbox.py alcance.py revision.py estado_schema.py tests/*.py
+python3 -m py_compile procesos.py nocturna.py despachar.py cola.py mutacion.py uso.py historial.py ver.py visor.py sandbox.py alcance.py revision.py estado_schema.py tests/*.py
 
 echo "== Ayuda CLI (no lanza modelos) =="
 python3 -B despachar.py --help >/dev/null

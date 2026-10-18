@@ -25,6 +25,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 import mutacion
+import procesos
 import sandbox
 from alcance import (ARCHIVOS_DEPENDENCIAS, MARCAS_NO_SECRETO, PATRON_ASIGNACION_SECRETO, PATRON_RUTA_ABSOLUTA,  # noqa: F401
                     PATRON_TOKEN_PROVEEDOR, SIEMPRE_PERMITIDOS, _glob_a_regex, es_archivo_dependencias,
@@ -409,7 +410,7 @@ def commitear_reporte(wt: Path) -> bool:
 def ejecutar_proceso_con_timeout(cmd: list[str], *, cwd: Path, timeout_s: float,
                                  stdout, stderr, gracia_s: float = 5) -> tuple[int, bool]:
     """Ejecuta un proceso en su propio grupo y termina también a sus descendientes al vencer el plazo."""
-    proc = subprocess.Popen(
+    proc = procesos.lanzar(
         cmd, cwd=cwd, stdout=stdout, stderr=stderr, stdin=subprocess.DEVNULL, start_new_session=True
     )
     try:
@@ -449,7 +450,7 @@ def correr_oraculo(comandos: list[str], cwd: Path, repo: Path, log: Path,
             cmd = cmd.replace("{repo}", str(repo))
             f.write(f"\n$ {cmd}\n")
             f.flush()
-            proc = subprocess.Popen(
+            proc = procesos.lanzar(
                 cmd, shell=True, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding="utf-8", errors="replace",
                 env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}, start_new_session=True,
@@ -510,7 +511,7 @@ def ejecutar_opencode_con_presupuesto(cmd: list[str], *, cwd: Path, timeout_s: f
     """Captura JSONL en vivo y corta por presupuesto de tokens de entrada o timeout."""
     err_file = salida_error.open("w", encoding="utf-8")
     try:
-        proc = subprocess.Popen(
+        proc = procesos.lanzar(
             cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=err_file,
             stdin=subprocess.DEVNULL, start_new_session=True, text=True, encoding="utf-8", bufsize=1,
         )
@@ -759,7 +760,7 @@ def mensaje_para_trabajador(cfg: dict, texto_encargo: str, wt: Path, repo: Path)
 def ejecutar_codex_con_timeout(cmd: list[str], mensaje: str, *, cwd: Path, timeout_s: float,
                                 stdout, stderr) -> tuple[int, bool]:
     """Ejecuta Codex CLI sin prompts de aprobación, dentro de workspace-write y con timeout."""
-    proc = subprocess.Popen(
+    proc = procesos.lanzar(
         cmd, cwd=cwd, stdin=subprocess.PIPE, stdout=stdout, stderr=stderr,
         text=True, encoding="utf-8", start_new_session=True,
     )
@@ -1179,6 +1180,7 @@ def main() -> int:
                     help="repite oráculo, alcance, mutación y revisor sobre el trabajo ya hecho, sin lanzar OpenCode")
     ap.add_argument("--revisar-solo", action="store_true", help="corre solo el revisor sobre el worktree existente")
     args = ap.parse_args()
+    procesos.instalar_manejador()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
     if args.validar:
         try:

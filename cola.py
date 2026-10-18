@@ -20,6 +20,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
 import despachar
+import procesos
 
 logger = logging.getLogger("cola")
 
@@ -212,7 +213,7 @@ def runner_subproceso(enc: dict) -> dict:
     try:
         cmd = [sys.executable, "-B", str(Path(despachar.__file__)), str(ruta_encargo)]
         timeout_s = enc["cfg"].get("timeout_cola_min", enc["cfg"].get("timeout_min", 20) + 30) * 60
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
+        proc = procesos.lanzar(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
                                 start_new_session=True)
         stdout, stderr, agotado = comunicar_con_timeout(proc, timeout_s)
         if agotado:
@@ -281,6 +282,7 @@ def main() -> int:
     ap.add_argument("--visor", action="store_true", help="un panel por corrida en Herdr (si corre dentro de Herdr)")
     ap.add_argument("--max", type=int, default=2, help=f"trabajadores en paralelo (1-{MAX_PERMITIDO})")
     args = ap.parse_args()
+    procesos.instalar_manejador()
     if not 1 <= args.max <= MAX_PERMITIDO:
         ap.error(f"--max debe estar entre 1 y {MAX_PERMITIDO}")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)

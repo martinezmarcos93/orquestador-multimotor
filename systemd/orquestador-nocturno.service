@@ -1,0 +1,13 @@
+[Unit]
+Description=Cola nocturna del orquestador (OpenCode)
+After=litellm-opencode.service network-online.target
+Wants=litellm-opencode.service
+
+[Service]
+Type=oneshot
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-%h/.config/opencode-free/.env
+# Cambiá la ruta al clon del repo y a la carpeta de la cola antes de instalar.
+ExecStart=/usr/bin/python3 -u %h/src/orquestador-opencode/nocturna.py --carpeta %h/orquestador-cola --max 2
+TimeoutStartSec=10h
+Nice=10
