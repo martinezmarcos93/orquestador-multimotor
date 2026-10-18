@@ -331,6 +331,16 @@
         "sobrevivientes": {
           "type": "array"
         },
+        "universo": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncado": {
+          "type": "boolean"
+        },
+        "interpretacion": {
+          "type": "string"
+        },
         "error": {
           "type": "string"
         }

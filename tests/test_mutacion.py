@@ -128,3 +128,20 @@ class TestEvaluar(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ContratoMutacion(unittest.TestCase):
+    def test_resumen_declara_universo_truncado_e_interpretacion(self):
+        with tempfile.TemporaryDirectory() as t:
+            wt = Path(t)
+            (wt / "m.py").write_text("def f(a, b):\n    return a + 1 if a < b else b - 2 + a * 3\n", encoding="utf-8")
+            (wt / "t.py").write_text("import m\nassert m.f(1, 2) == 2\n", encoding="utf-8")
+            r = m.evaluar(wt, ["m.py"], ["python3 t.py"], maximo=2)
+            self.assertTrue(r["truncado"])
+            self.assertGreater(r["universo"], r["total"])
+            self.assertEqual(r["total"], 2)
+            self.assertIn("muestra", r["interpretacion"])
+            completo = m.evaluar(wt, ["m.py"], ["python3 t.py"], maximo=500)
+            self.assertFalse(completo["truncado"])
+            self.assertIn("universo completo", completo["interpretacion"])
+            self.assertIn("No es cobertura", completo["interpretacion"])

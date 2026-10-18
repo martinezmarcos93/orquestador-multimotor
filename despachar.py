@@ -1192,7 +1192,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
             else:
                 estado["aprobacion"] = "bloqueado_por_resultado_tecnico"
         if resumen_mut:
-            estado["mutacion"] = {k: resumen_mut[k] for k in ("total", "muertos", "puntaje") if k in resumen_mut}
+            estado["mutacion"] = {k: resumen_mut[k] for k in ("total", "universo", "truncado", "muertos", "puntaje", "interpretacion") if k in resumen_mut}
             estado["mutacion"]["sobrevivientes"] = resumen_mut.get("sobrevivientes", [])[:15]
             if "error" in resumen_mut:
                 estado["mutacion"]["error"] = resumen_mut["error"]

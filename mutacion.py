@@ -185,8 +185,13 @@ def evaluar(wt: Path, archivos: list[str], comandos: list[str], funciones: list[
             finally:
                 (copia / archivo).write_text(originales[archivo], encoding="utf-8")
     total = len(candidatos)
-    return {"total": total, "universo": universo, "muertos": total - len(vivos),
-            "puntaje": round((total - len(vivos)) / total, 3) if total else None, "sobrevivientes": vivos}
+    truncado = universo > total
+    return {"total": total, "universo": universo, "truncado": truncado, "semilla": semilla,
+            "muertos": total - len(vivos),
+            "puntaje": round((total - len(vivos)) / total, 3) if total else None, "sobrevivientes": vivos,
+            "interpretacion": (
+                f"Proporción de {total} mutantes{' (muestra de ' + str(universo) + ', semilla ' + str(semilla) + ')' if truncado else ' (universo completo)'} "
+                "que los tests detectan. No es cobertura ni calidad general; los sobrevivientes pueden ser mutaciones equivalentes.")}
 
 
 def main() -> int:
