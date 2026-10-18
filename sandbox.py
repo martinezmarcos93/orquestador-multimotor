@@ -60,9 +60,7 @@ def envolver(cmd: list[str], *, wt: Path, datos: Path, ro_extra: list[Path] | No
     propio de la corrida que hace de ~/.local/share/opencode (se crea vacío). `herramientas` son
     prefijos (p. ej. ~/.nvm/versions/node/v24.20.0) que se montan de solo lectura y aportan su `bin/` al PATH."""
     home = Path.home()
-    exe = shutil.which("bwrap")
-    if not exe:
-        raise RuntimeError("sandbox = 'bwrap' pero bwrap no está instalado")
+    exe = shutil.which("bwrap") or "bwrap"  # la ausencia la detecta el preflight (disponible())
     datos.mkdir(parents=True, exist_ok=True)
     rutas_ro = [Path("/usr"), Path("/etc"), home / ".opencode", home / ".config" / "opencode"]
     rutas_ro += [Path(p) for p in (ro_extra if ro_extra is not None else instrucciones_opencode())]

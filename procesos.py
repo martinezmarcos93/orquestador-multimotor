@@ -21,8 +21,9 @@ _cerrojo = threading.Lock()
 def lanzar(*args, **kwargs) -> subprocess.Popen:
     kwargs.setdefault("start_new_session", True)
     proc = subprocess.Popen(*args, **kwargs)
-    with _cerrojo:
-        _activos.add(proc)
+    if hasattr(proc, "poll"):  # los tests sustituyen Popen por dobles sin poll()
+        with _cerrojo:
+            _activos.add(proc)
     return proc
 
 
