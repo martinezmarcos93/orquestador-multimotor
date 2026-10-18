@@ -57,7 +57,7 @@ if [[ "$modo" == "installed" ]]; then
   done
   skill="skills/director-opencode/SKILL.md"
   destino="$HOME/.claude/skills/director-opencode/SKILL.md"
-  if [[ ! -f "$destino" ]] || ! cmp -s "$skill" "$destino"; then
+  if [[ ! -f "$destino" ]] || ! sed "s#@@ORQUESTADOR@@#$ROOT#g" "$skill" | cmp -s - "$destino"; then
     echo "ERROR: skill ausente o desactualizada: $destino (ejecutá bash instalar.sh)" >&2
     exit 1
   fi

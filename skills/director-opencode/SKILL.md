@@ -31,7 +31,7 @@ Reglas de calibre y de obediencia: `delegacion-opencode` y `_metodologias/claude
    +++
    ```
    El oráculo corre dentro del worktree, antes y después. Por defecto, el despachador **no** enlaza `.venv` ni `node_modules` del repositorio original; `permitir_entornos_compartidos = true` habilita esos enlaces de forma explícita y reduce el aislamiento. Usá rutas **relativas**. Si el encargo menciona la ruta del repo original, el despachador la reescribe por la del worktree cuando corresponde. **Un worktree no es un sandbox de seguridad**: no garantiza por sí solo que el proceso no pueda leer archivos externos, heredar variables sensibles o acceder a la red. No delegues secretos ni datos de terceros a modelos gratuitos; las tareas sensibles requieren controles de sistema operativo verificados.
-3. **Lanzá** en segundo plano: `python3 ~/src/orquestador-opencode/despachar.py <encargo>` con `run_in_background`. Al terminar te reactivás solo: no hagas polling. `--dry-run` prepara el worktree sin gastar cuota.
+3. **Lanzá** en segundo plano: `python3 @@ORQUESTADOR@@/despachar.py <encargo>` con `run_in_background`. Al terminar te reactivás solo: no hagas polling. `--dry-run` prepara el worktree sin gastar cuota.
 4. **Leé en orden de costo:** JSON de `resultado` → `runs/<proyecto>-<id>/ronda-N/estado.json` → `REPORTE.md` → `git diff --stat` → diff completo. No confíes en el "listo": corré el oráculo vos.
 5. **Decidí** según `resultado`:
    - `pasa`: revisá el diff y proponele a Marcos integrar. El merge a main es suyo. **Si son tests, hacé prueba de mutación** (ver abajo) antes de dar por buena la calidad.
