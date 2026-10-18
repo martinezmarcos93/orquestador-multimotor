@@ -598,6 +598,26 @@ def ejecutar_opencode_con_presupuesto(cmd: list[str], *, cwd: Path, timeout_s: f
         err_file.close()
 
 
+ARTEFACTOS_IGNORADOS = ("__pycache__/", "*.pyc")
+
+
+def excluir_artefactos(repo: Path) -> None:
+    """Evita que el oráculo deje __pycache__/*.pyc commiteables en repos sin .gitignore.
+
+    Escribe en info/exclude del repo (local, no versionado); es idempotente.
+    """
+    comun = Path(git(repo, "rev-parse", "--git-common-dir"))
+    if not comun.is_absolute():
+        comun = repo / comun
+    archivo = comun / "info" / "exclude"
+    archivo.parent.mkdir(parents=True, exist_ok=True)
+    actual = archivo.read_text(encoding="utf-8").splitlines() if archivo.exists() else []
+    faltan = [p for p in ARTEFACTOS_IGNORADOS if p not in actual]
+    if faltan:
+        with archivo.open("a", encoding="utf-8") as f:
+            f.write("\n".join(faltan) + "\n")
+
+
 def preparar_worktree(cfg: dict, repo: Path, base_sha: str) -> tuple[Path, str, bool]:
     """Crea el worktree o valida la identidad del ya existente; nunca lo reutiliza a ciegas."""
     rama = f"opencode/{date.today().isoformat()}-{cfg['tema']}"
@@ -622,6 +642,7 @@ def preparar_worktree(cfg: dict, repo: Path, base_sha: str) -> tuple[Path, str, 
         if comun_repo.resolve() != comun_wt.resolve():
             raise RuntimeError("el worktree existente no pertenece al repositorio del encargo")
         return wt, rama_actual, True
+    excluir_artefactos(repo)
     git(repo, "worktree", "add", str(wt), "-b", rama, base_sha)
     return wt, rama, False
 

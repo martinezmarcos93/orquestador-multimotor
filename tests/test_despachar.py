@@ -235,6 +235,24 @@ class TestWorktreeBase(unittest.TestCase):
             self.assertNotEqual(d.git(repo, "rev-parse", "main"), base_sha)
             self.assertTrue(d.base_es_ancestro(base_sha, wt))
 
+    def test_worktree_nuevo_ignora_pycache_sin_gitignore(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            self._repo(repo)
+            d.SRC = root / "src"
+            d.SRC.mkdir()
+            cfg = {"proyecto": "demo", "tema": "sin-pyc", "base": "main"}
+            wt, _, _ = d.preparar_worktree(cfg, repo, d.git(repo, "rev-parse", "main"))
+            (wt / "__pycache__").mkdir()
+            (wt / "__pycache__" / "x.cpython-312.pyc").write_bytes(b"\0")
+            (wt / "mod.pyc").write_bytes(b"\0")
+            self.assertEqual(d.git(wt, "status", "--porcelain"), "")
+            d.excluir_artefactos(repo)  # idempotente
+            exclude = (repo / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+            self.assertEqual(exclude.count("__pycache__/"), 1)
+
     def test_base_que_avanza_deja_de_ser_ancestro_del_worktree_viejo(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:

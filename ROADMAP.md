@@ -123,3 +123,16 @@ Estado: **implementación inicial y pruebas automatizadas aprobadas; aceptación
 - Cola: normaliza rutas de repositorio antes de decidir concurrencia; las excepciones del runner cuentan para el corte de fallos; valida `--max` (1–3), evita colisiones de nombres de resumen y conserva diagnósticos en el JSON de cola.
 - Estado: se añadió `schemas/estado.v1.schema.json`, timestamps UTC, versión del estado y `siguiente_accion`; el contrato mínimo se valida antes de persistir. Esto es una primera versión, no una implementación completa del estándar JSON Schema.
 - Pendiente para Claude/entorno anfitrión: prueba real OpenCode/LiteLLM, inspección de `estado.json` de trabajador, sandbox de sistema operativo, validación de la cola completa e inspección de encargos históricos. Ver [handoff para Claude](docs/handoff-claude.md) para pasos concretos.
+
+
+## Bitácora — aceptación en el equipo anfitrión (2026-10-17)
+
+Primera corrida **real** (OpenCode + LiteLLM locales, agente `tester`, repo sintético de dos funciones). Estado: **probado en vivo**.
+
+- `bash verificar.sh --installed` y `--tools`: OK en el host (163 tests, entonces).
+- `--validar` y `--dry-run` con encargo real: OK.
+- **Parser de uso (P1):** el JSONL real de OpenCode coincide con `uso.py`: 3 pasos / 3 eventos con tokens en la ronda 1 y 18 pasos / 18 eventos en la ronda 2, `razon_final = stop`, 0 líneas inválidas. `estado.json` validó contra el esquema v1 y la corrida quedó anexada a `runs/historial.jsonl`.
+- **Hallazgo 1 (ronda 1, `sin_cambios`):** el modelo cargó la skill `delegacion-opencode`, ejecutó `git fetch` y terminó con `stop` sin escribir nada (197 s, 47 k tokens de entrada). El despachador lo clasificó bien. La ronda 2 con feedback concreto sí produjo `tests/test_calc.py`, commits y oráculo verde.
+- **Hallazgo 2 (ronda 2, `fuera_de_alcance`):** el oráculo dejó `__pycache__/*.pyc` y el worker los commiteó (el repo no tenía `.gitignore`). Corregido: `excluir_artefactos()` agrega `__pycache__/` y `*.pyc` a `info/exclude` del repo antes de crear el worktree (test incluido).
+- `REPORTE.md` y `docs/opencode/**` ya estaban en `SIEMPRE_PERMITIDOS`: no hubo falsos positivos de alcance por ellos.
+- Aún no cubierto: veredicto del revisor con OpenCode real, hallazgo ALTA, cola completa con timeout exterior (ver fases siguientes).
