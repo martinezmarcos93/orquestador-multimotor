@@ -253,6 +253,22 @@ class TestWorktreeBase(unittest.TestCase):
             exclude = (repo / ".git" / "info" / "exclude").read_text(encoding="utf-8")
             self.assertEqual(exclude.count("__pycache__/"), 1)
 
+    def test_secretos_falsos_positivos_medidos_en_repos_reales(self):
+        for linea in ("iVBORw0aKIAAAAAADBMzNFtZ2enAKiamZnJyUG8lKjc3JyZ",  # base64 de imagen
+                      'PASSWORD = os.environ.get("DB_PASSWORD")',
+                      "token: result.invitationToken",
+                      'csrfToken: "csrf-booking-token"',
+                      'SECRET: "test-session-secret-with-more-than-32-characters"',
+                      "password = process.env.APP_PASSWORD_LONG"):
+            self.assertFalse(d.posible_secreto(linea), linea)
+
+    def test_secretos_verdaderos_siguen_detectados(self):
+        for linea in ('"token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.SflKxwRJSMeKKF2QT4fw"',
+                      'password: "clave-inicial-segura-1"',
+                      "SECRET=9f8a7b6c5d4e3f2a1b0c",
+                      "AWS_KEY AKIAIOSFODNN7EXAMPL3"):
+            self.assertTrue(d.posible_secreto(linea), linea)
+
     def test_commitear_pendientes_deja_arbol_limpio_y_un_commit(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:

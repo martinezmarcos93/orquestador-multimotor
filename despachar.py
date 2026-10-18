@@ -51,13 +51,19 @@ ARCHIVOS_DEPENDENCIAS = {
 PATRON_RUTA_ABSOLUTA = re.compile(
     r"(?<![A-Za-z0-9:/])/(?:home|tmp|mnt|etc|var|root|opt|usr|workspace|Users|private)/[^\s]+"
 )
-PATRON_SECRETO = re.compile(
+PATRON_ASIGNACION_SECRETO = re.compile(
     r"[\"']?(?:api[_-]?key|secret|token|password|passwd|access[_-]?key|private[_-]?key|client[_-]?secret)[\"']?"
-    r"\s*[=:]\s*(?:['\"][^'\"\s]{8,}['\"]|[A-Za-z0-9_./+=-]{12,})"
-    r"|-----BEGIN"
-    r"|(?:sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,})",
+    r"\s*[=:]\s*(?:(?P<q>['\"])(?P<vq>[^'\"\s]{8,})(?P=q)|(?P<vu>[A-Za-z0-9_./+=-]{12,}))",
     re.I,
 )
+# Prefijos de proveedores: distinguen mayúsculas (si no, 'aKIA' dentro de un base64 de imagen es un falso positivo).
+PATRON_TOKEN_PROVEEDOR = re.compile(
+    r"\b(?:sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,})"
+    r"|-----BEGIN|\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
+)
+# Valores que son marcadores de prueba o referencias a otra fuente, no credenciales literales.
+MARCAS_NO_SECRETO = ("test", "mock", "fake", "dummy", "example", "sample", "placeholder", "changeme",
+                     "prueba", "csrf", "xxxx", "your_", "your-", "<", "${", "{{", "process.env", "environ")
 CAMPOS_OBLIGATORIOS = ("id", "proyecto", "repo", "agente", "tema", "permitidos", "oraculo")
 
 
@@ -71,7 +77,17 @@ def es_archivo_dependencias(ruta: str) -> bool:
 
 def posible_secreto(texto: str) -> bool:
     """Filtro heurístico para credenciales; un resultado negativo no garantiza ausencia de secretos."""
-    return bool(PATRON_SECRETO.search(texto))
+    if PATRON_TOKEN_PROVEEDOR.search(texto):
+        return True
+    for m in PATRON_ASIGNACION_SECRETO.finditer(texto):
+        valor = m.group("vq") or m.group("vu")
+        if any(marca in valor.lower() for marca in MARCAS_NO_SECRETO):
+            continue
+        # Sin comillas, una expresión (os.environ.get, actor.csrfToken) no es un literal: exigir un dígito.
+        if m.group("vu") and not re.search(r"\d", valor):
+            continue
+        return True
+    return False
 
 
 def parsear_encargo(texto: str) -> dict:
