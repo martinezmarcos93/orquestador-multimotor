@@ -26,6 +26,12 @@ from pathlib import Path
 
 import mutacion
 import sandbox
+from alcance import (ARCHIVOS_DEPENDENCIAS, MARCAS_NO_SECRETO, PATRON_ASIGNACION_SECRETO, PATRON_RUTA_ABSOLUTA,  # noqa: F401
+                    PATRON_TOKEN_PROVEEDOR, SIEMPRE_PERMITIDOS, _glob_a_regex, es_archivo_dependencias,
+                    fuera_de_alcance, posible_secreto, violaciones_inmutables)
+from estado_schema import _coincide_tipo_json, _validar_con_schema, validar_estado_v1  # noqa: F401
+from revision import (aprobar_revision, normalizar_veredicto, resumir_revision,  # noqa: F401
+                      texto_final_de_eventos, validar_formato_revision)
 import uso
 import historial
 import visor as visor_herdr
@@ -37,57 +43,9 @@ RUNS = RAIZ / "runs"
 SRC = Path.home() / "src"
 MAX_RONDAS = 2
 MAX_CUERPO_ENCARGO = 30_000
-SIEMPRE_PERMITIDOS = ["REPORTE.md", "docs/opencode/**"]
-ARCHIVOS_DEPENDENCIAS = {
-    "requirements.txt", "requirements.in", "constraints.txt", "constraints.in", "pyproject.toml", "package.json", "package-lock.json",
-    "poetry.lock", "Pipfile", "Pipfile.lock", "uv.lock", "pdm.lock",
-    "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb",
-    "Cargo.toml", "Cargo.lock", "go.mod", "go.sum",
-    "Gemfile", "Gemfile.lock", "composer.json", "composer.lock",
-    "mix.exs", "mix.lock", "gradle.lockfile", "build.gradle", "build.gradle.kts", "pom.xml",
-    "Package.swift", "Podfile.lock", "pubspec.yaml", "pubspec.lock",
-    "environment.yml", "environment.yaml", "conda-lock.yml", "setup.py", "setup.cfg",
-}
-PATRON_RUTA_ABSOLUTA = re.compile(
-    r"(?<![A-Za-z0-9:/])/(?:home|tmp|mnt|etc|var|root|opt|usr|workspace|Users|private)/[^\s]+"
-)
-PATRON_ASIGNACION_SECRETO = re.compile(
-    r"[\"']?(?:api[_-]?key|secret|token|password|passwd|access[_-]?key|private[_-]?key|client[_-]?secret)[\"']?"
-    r"\s*[=:]\s*(?:(?P<q>['\"])(?P<vq>[^'\"\s]{8,})(?P=q)|(?P<vu>[A-Za-z0-9_./+=-]{12,}))",
-    re.I,
-)
 # Prefijos de proveedores: distinguen mayúsculas (si no, 'aKIA' dentro de un base64 de imagen es un falso positivo).
-PATRON_TOKEN_PROVEEDOR = re.compile(
-    r"\b(?:sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,})"
-    r"|-----BEGIN|\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
-)
 # Valores que son marcadores de prueba o referencias a otra fuente, no credenciales literales.
-MARCAS_NO_SECRETO = ("test", "mock", "fake", "dummy", "example", "sample", "placeholder", "changeme",
-                     "prueba", "csrf", "xxxx", "your_", "your-", "<", "${", "{{", "process.env", "environ")
 CAMPOS_OBLIGATORIOS = ("id", "proyecto", "repo", "agente", "tema", "permitidos", "oraculo")
-
-
-def es_archivo_dependencias(ruta: str) -> bool:
-    """Reconoce manifiestos y lockfiles comunes por nombre; no pretende cubrir todo ecosistema."""
-    nombre = Path(ruta).name.lower()
-    if nombre in {n.lower() for n in ARCHIVOS_DEPENDENCIAS}:
-        return True
-    return nombre.startswith(("requirements-", "requirements_", "constraints-", "constraints_")) and nombre.endswith((".txt", ".in"))
-
-
-def posible_secreto(texto: str) -> bool:
-    """Filtro heurístico para credenciales; un resultado negativo no garantiza ausencia de secretos."""
-    if PATRON_TOKEN_PROVEEDOR.search(texto):
-        return True
-    for m in PATRON_ASIGNACION_SECRETO.finditer(texto):
-        valor = m.group("vq") or m.group("vu")
-        if any(marca in valor.lower() for marca in MARCAS_NO_SECRETO):
-            continue
-        # Sin comillas, una expresión (os.environ.get, actor.csrfToken) no es un literal: exigir un dígito.
-        if m.group("vu") and not re.search(r"\d", valor):
-            continue
-        return True
-    return False
 
 
 def parsear_encargo(texto: str) -> dict:
@@ -328,36 +286,9 @@ def validar_encargo(ruta_encargo: Path, directorio_agentes: Path | None = None, 
     }
 
 
-def _glob_a_regex(patron: str) -> re.Pattern:
-    salida, i = "", 0
-    while i < len(patron):
-        if patron.startswith("**", i):
-            salida += ".*"
-            i += 2
-        elif patron[i] == "*":
-            salida += "[^/]*"
-            i += 1
-        else:
-            salida += re.escape(patron[i])
-            i += 1
-    return re.compile(salida + r"\Z")
-
-
-def fuera_de_alcance(archivos: list[str], permitidos: list[str]) -> list[str]:
-    """Devuelve los archivos que no calzan con ningún patrón permitido."""
-    regexes = [_glob_a_regex(p) for p in list(permitidos) + SIEMPRE_PERMITIDOS]
-    return [a for a in archivos if not any(r.match(a) for r in regexes)]
-
-
 def archivos_cambiados_desde(base_ref: str, wt: Path) -> list[str]:
     """Lista rutas cambiadas sin detección de renombres para incluir origen y destino."""
     return sorted(set(git(wt, "diff", "--name-only", "--no-renames", f"{base_ref}..HEAD").splitlines()))
-
-
-def violaciones_inmutables(archivos: list[str], inmutables: list[str]) -> list[str]:
-    """Devuelve archivos cambiados que coinciden con patrones protegidos."""
-    regexes = [_glob_a_regex(p) for p in inmutables]
-    return sorted({a for a in archivos if any(r.match(a) for r in regexes)})
 
 
 def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: list[str],
@@ -848,72 +779,6 @@ def ejecutar_codex_con_timeout(cmd: list[str], mensaje: str, *, cwd: Path, timeo
     return proc.returncode, False
 
 
-def texto_final_de_eventos(lineas) -> str:
-    """Texto de la respuesta final del agente a partir del stream --format json de OpenCode."""
-    textos = []
-    for linea in lineas:
-        try:
-            parte = json.loads(linea).get("part", {})
-        except json.JSONDecodeError:
-            continue
-        if parte.get("type") == "text" and parte.get("text", "").strip():
-            textos.append(parte["text"].strip())
-    for t in reversed(textos):
-        if "## Hallazgos" in t:
-            return t
-    return "\n\n".join(textos)
-
-
-def normalizar_veredicto(linea: str) -> str:
-    """Tolera adornos triviales (`**APTO**`, `APTO.`, backticks); no acepta otras palabras."""
-    return linea.strip().strip("*`_ ").rstrip(".!:;").strip("*`_ ")
-
-
-def resumir_revision(texto: str) -> dict:
-    niveles = {n.lower() + "s": len(re.findall(rf"^\s*-\s*\[{n}\]", texto, re.M)) for n in ("ALTA", "MEDIA", "BAJA")}
-    m = re.search(r"(?m)^## Veredicto\s*\n([^\n]+)", texto)
-    return {"veredicto": normalizar_veredicto(m.group(1)) if m else None, **niveles}
-
-
-def validar_formato_revision(texto: str) -> dict:
-    """Valida el contrato mínimo del revisor; no interpreta el contenido como verdad objetiva."""
-    resumen = resumir_revision(texto)
-    m = re.search(r"(?m)^## Veredicto\s*\n([^\n]+)", texto)
-    h = re.search(r"(?ms)^## Hallazgos\s*\n(.*)\Z", texto)
-    if not m or not h:
-        return {"formato_valido": False, "error_formato": "faltan las secciones Veredicto o Hallazgos", **resumen}
-    veredicto = normalizar_veredicto(m.group(1))
-    if veredicto not in ("APTO", "CON_OBSERVACIONES"):
-        return {"formato_valido": False, "error_formato": "veredicto desconocido", **resumen}
-    lineas = [line.strip() for line in h.group(1).splitlines() if line.strip()]
-    if not lineas:
-        return {"formato_valido": False, "error_formato": "la sección Hallazgos está vacía", **resumen}
-    if lineas != ["- ninguno"]:
-        patron = re.compile(r"^- \[(ALTA|MEDIA|BAJA)\] [^:\n]+:\d+ — .+ Evidencia: .+$")
-        if not all(patron.match(linea) for linea in lineas):
-            return {"formato_valido": False, "error_formato": "hallazgo fuera del formato requerido o sin evidencia", **resumen}
-    if veredicto == "CON_OBSERVACIONES" and lineas == ["- ninguno"]:
-        return {"formato_valido": False, "error_formato": "CON_OBSERVACIONES requiere al menos un hallazgo", **resumen}
-    if veredicto == "APTO" and (resumen["altas"] or resumen["medias"]):
-        return {"formato_valido": False, "error_formato": "APTO contradice hallazgos ALTA/MEDIA", **resumen}
-    return {"formato_valido": True, **resumen}
-
-
-def aprobar_revision(revision: dict | None) -> str:
-    """Estado de aprobación separado del resultado técnico de tests/oráculo."""
-    if not revision or revision.get("error"):
-        return "revision_error"
-    if not revision.get("formato_valido"):
-        return "revision_formato_invalido"
-    if revision.get("veredicto") == "CON_OBSERVACIONES":
-        return "con_observaciones"
-    if revision.get("veredicto") == "APTO":
-        if revision.get("altas", 0) or revision.get("medias", 0):
-            return "revision_inconsistente"
-        return "aprobado"
-    return "revision_formato_invalido"
-
-
 def revisar(cfg: dict, texto_encargo: str, wt: Path, run: Path, base_ref: str) -> dict:
     """Etapa del revisor (solo lectura). Rechaza estado sucio y detecta mutaciones."""
     antes = (git(wt, "rev-parse", "HEAD"), listar_sucios(wt))
@@ -1301,81 +1166,6 @@ def normalizar_estado(estado: dict, inicio_utc: str) -> dict:
             resultado, "Inspeccionar estado.json y los logs asociados antes de continuar."
         )
     return estado
-
-
-def _coincide_tipo_json(valor, tipo: str) -> bool:
-    if tipo == "object":
-        return isinstance(valor, dict)
-    if tipo == "array":
-        return isinstance(valor, list)
-    if tipo == "string":
-        return isinstance(valor, str)
-    if tipo == "boolean":
-        return isinstance(valor, bool)
-    if tipo == "integer":
-        return isinstance(valor, int) and not isinstance(valor, bool)
-    if tipo == "number":
-        return isinstance(valor, (int, float)) and not isinstance(valor, bool)
-    if tipo == "null":
-        return valor is None
-    return True
-
-
-def _validar_con_schema(valor, esquema: dict, ruta: str = "$") -> list[str]:
-    """Valida el subconjunto JSON Schema usado por estado.v1, sin dependencias externas."""
-    errores: list[str] = []
-    tipos = esquema.get("type")
-    if tipos is not None:
-        opciones = tipos if isinstance(tipos, list) else [tipos]
-        if not any(_coincide_tipo_json(valor, tipo) for tipo in opciones):
-            errores.append(f"{ruta}: tipo inválido; se esperaba {' o '.join(opciones)}")
-            return errores
-    if "const" in esquema and valor != esquema["const"]:
-        errores.append(f"{ruta}: debe ser exactamente {esquema['const']!r}")
-    if "enum" in esquema and valor not in esquema["enum"]:
-        errores.append(f"{ruta}: valor fuera del enum permitido")
-    if isinstance(valor, str):
-        if len(valor) < esquema.get("minLength", 0):
-            errores.append(f"{ruta}: longitud menor que minLength")
-        patron = esquema.get("pattern")
-        if patron and not re.search(patron, valor):
-            errores.append(f"{ruta}: no coincide con pattern")
-        if esquema.get("format") == "date-time":
-            try:
-                fecha = datetime.fromisoformat(valor.replace("Z", "+00:00"))
-                if fecha.tzinfo is None or fecha.utcoffset() is None:
-                    raise ValueError("falta zona horaria")
-            except ValueError:
-                errores.append(f"{ruta}: debe ser una fecha ISO-8601 con zona horaria")
-    if isinstance(valor, (int, float)) and not isinstance(valor, bool):
-        if "minimum" in esquema and valor < esquema["minimum"]:
-            errores.append(f"{ruta}: valor menor que minimum")
-        if "maximum" in esquema and valor > esquema["maximum"]:
-            errores.append(f"{ruta}: valor mayor que maximum")
-    if isinstance(valor, dict):
-        faltan = [campo for campo in esquema.get("required", []) if campo not in valor]
-        errores.extend(f"{ruta}: falta el campo obligatorio {campo!r}" for campo in faltan)
-        propiedades = esquema.get("properties", {})
-        for campo, subesquema in propiedades.items():
-            if campo in valor and isinstance(subesquema, dict):
-                errores.extend(_validar_con_schema(valor[campo], subesquema, f"{ruta}.{campo}"))
-        if esquema.get("additionalProperties") is False:
-            desconocidas = set(valor) - set(propiedades)
-            errores.extend(f"{ruta}: propiedad no permitida {campo!r}" for campo in sorted(desconocidas))
-    if isinstance(valor, list) and isinstance(esquema.get("items"), dict):
-        for indice, elemento in enumerate(valor):
-            errores.extend(_validar_con_schema(elemento, esquema["items"], f"{ruta}[{indice}]"))
-    return errores
-
-
-def validar_estado_v1(estado: dict) -> list[str]:
-    """Valida estado.json contra el esquema versionado y sus restricciones declaradas."""
-    ruta_schema = RAIZ / "schemas" / "estado.v1.schema.json"
-    try:
-        esquema = json.loads(ruta_schema.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        return [f"no se pudo cargar el esquema de estado v1: {exc}"]
-    return _validar_con_schema(estado, esquema)
 
 
 def main() -> int:
