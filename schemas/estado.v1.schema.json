@@ -465,6 +465,13 @@
         "codex"
       ]
     },
+    "sandbox": {
+      "type": "string",
+      "enum": [
+        "ninguno",
+        "bwrap"
+      ]
+    },
     "rc_worker": {
       "type": "integer"
     }

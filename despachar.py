@@ -25,6 +25,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 import mutacion
+import sandbox
 import uso
 import historial
 import visor as visor_herdr
@@ -98,6 +99,11 @@ def parsear_encargo(texto: str) -> dict:
     cfg.setdefault("motor", "opencode")
     if cfg["motor"] not in ("opencode", "codex"):
         raise ValueError("'motor' debe ser 'opencode' o 'codex'")
+    cfg.setdefault("sandbox", sandbox.modo_por_defecto())
+    if cfg["sandbox"] not in sandbox.MODOS:
+        raise ValueError(f"'sandbox' debe ser uno de {sandbox.MODOS}")
+    if cfg["sandbox"] == "bwrap" and cfg["motor"] != "opencode":
+        raise ValueError("'sandbox = \"bwrap\"' solo aplica al motor opencode (Codex trae su propio sandbox)")
     depende_de = cfg.get("depende_de", [])
     if not isinstance(depende_de, list) or any(
         not isinstance(dep, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", dep)
@@ -288,6 +294,8 @@ def validar_encargo(ruta_encargo: Path, directorio_agentes: Path | None = None, 
             errores.append(f"el agente '{agente}' no está instalado en {agentes}")
     if cfg["agente"] == "higiene" and not cfg.get("exige_baseline_verde", False):
         errores.append("los encargos del agente 'higiene' requieren exige_baseline_verde = true")
+    if cfg.get("sandbox") == "bwrap" and not sandbox.disponible():
+        errores.append("sandbox = 'bwrap' pero bwrap no está disponible o no puede crear espacios de nombres")
     if cfg.get("exige_baseline_verde"):
         advertencias.append("el baseline se ejecutará durante el despacho; --validar no ejecuta el oráculo")
     return {
@@ -618,6 +626,13 @@ def excluir_artefactos(repo: Path) -> None:
             f.write("\n".join(faltan) + "\n")
 
 
+def confinar(cmd: list[str], cfg: dict, wt: Path, run: Path) -> list[str]:
+    """Envuelve el comando de OpenCode en bwrap si el encargo lo pide; si no, lo deja igual."""
+    if cfg.get("sandbox") != "bwrap":
+        return cmd
+    return sandbox.envolver(cmd, wt=wt, datos=run / "opencode-data")
+
+
 def preparar_worktree(cfg: dict, repo: Path, base_sha: str) -> tuple[Path, str, bool]:
     """Crea el worktree o valida la identidad del ya existente; nunca lo reutiliza a ciegas."""
     rama = f"opencode/{date.today().isoformat()}-{cfg['tema']}"
@@ -803,10 +818,15 @@ def texto_final_de_eventos(lineas) -> str:
     return "\n\n".join(textos)
 
 
+def normalizar_veredicto(linea: str) -> str:
+    """Tolera adornos triviales (`**APTO**`, `APTO.`, backticks); no acepta otras palabras."""
+    return linea.strip().strip("*`_ ").rstrip(".!:;").strip("*`_ ")
+
+
 def resumir_revision(texto: str) -> dict:
     niveles = {n.lower() + "s": len(re.findall(rf"^\s*-\s*\[{n}\]", texto, re.M)) for n in ("ALTA", "MEDIA", "BAJA")}
     m = re.search(r"(?m)^## Veredicto\s*\n([^\n]+)", texto)
-    return {"veredicto": m.group(1).strip() if m else None, **niveles}
+    return {"veredicto": normalizar_veredicto(m.group(1)) if m else None, **niveles}
 
 
 def validar_formato_revision(texto: str) -> dict:
@@ -816,7 +836,7 @@ def validar_formato_revision(texto: str) -> dict:
     h = re.search(r"(?ms)^## Hallazgos\s*\n(.*)\Z", texto)
     if not m or not h:
         return {"formato_valido": False, "error_formato": "faltan las secciones Veredicto o Hallazgos", **resumen}
-    veredicto = m.group(1).strip()
+    veredicto = normalizar_veredicto(m.group(1))
     if veredicto not in ("APTO", "CON_OBSERVACIONES"):
         return {"formato_valido": False, "error_formato": "veredicto desconocido", **resumen}
     lineas = [line.strip() for line in h.group(1).splitlines() if line.strip()]
@@ -860,6 +880,7 @@ def revisar(cfg: dict, texto_encargo: str, wt: Path, run: Path, base_ref: str) -
                "Respondé solo con el formato indicado en tus instrucciones.")
     cmd = ["opencode", "run", "--agent", "revisor", "--dir", str(wt), "--format", "json",
            "--title", f"rev-{cfg['id']}", mensaje]
+    cmd = confinar(cmd, cfg, wt, run)
     error_proceso = None
     proc = None
     codigo_revision = None
@@ -918,6 +939,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         "id": cfg["id"], "proyecto": cfg["proyecto"], "agente": cfg["agente"], "ronda": ronda,
         "presupuesto_tokens": cfg.get("presupuesto_tokens"), "depende_de": cfg.get("depende_de", []),
         "espera_rojo": cfg.get("espera_rojo", False), "motor": cfg.get("motor", "opencode"),
+        "sandbox": cfg.get("sandbox", "ninguno"),
     }
     if ronda > MAX_RONDAS and not reevaluar:
         estado["resultado"] = "tope_rondas"
@@ -991,6 +1013,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
             else:
                 cmd = ["opencode", "run", "--agent", cfg["agente"], "--dir", str(wt), "--format", "json",
                        "--title", f"enc-{cfg['id']}-r{ronda}", mensaje]
+                cmd = confinar(cmd, cfg, wt, run)
             logger.info("lanzando worker motor=%s: %s", cfg["motor"], shlex.join(cmd[:8]))
             if cfg["motor"] == "codex":
                 with (run / "opencode.jsonl").open("w", encoding="utf-8") as out, \

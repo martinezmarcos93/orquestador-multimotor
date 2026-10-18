@@ -136,3 +136,6 @@ Primera corrida **real** (OpenCode + LiteLLM locales, agente `tester`, repo sint
 - **Hallazgo 2 (ronda 2, `fuera_de_alcance`):** el oráculo dejó `__pycache__/*.pyc` y el worker los commiteó (el repo no tenía `.gitignore`). Corregido: `excluir_artefactos()` agrega `__pycache__/` y `*.pyc` a `info/exclude` del repo antes de crear el worktree (test incluido).
 - `REPORTE.md` y `docs/opencode/**` ya estaban en `SIEMPRE_PERMITIDOS`: no hubo falsos positivos de alcance por ellos.
 - Aún no cubierto: veredicto del revisor con OpenCode real, hallazgo ALTA, cola completa con timeout exterior (ver fases siguientes).
+
+- **S0.2 (avance, probado en vivo):** `sandbox.py` + `sandbox = "bwrap"` (opt-in). Corrida real del trabajador `tester` y del `revisor` dentro de bwrap contra LiteLLM local: el worker commiteó y el oráculo pasó; un archivo centinela en `$HOME` y `auth.json` no fueron accesibles. Límites: red compartida (proxy en 127.0.0.1) y `.git` común escribible. Falta decidir si pasa a ser el valor por defecto.
+- **Hallazgo 3 (revisor real):** el modelo escribió `APTO.` y el validador estricto rechazó el formato. Ahora `normalizar_veredicto` tolera `**`, backticks y puntuación final, pero no palabras nuevas. Tras el cambio la revisión real dio `aprobado / APTO`.

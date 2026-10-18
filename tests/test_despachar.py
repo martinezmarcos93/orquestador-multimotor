@@ -253,6 +253,14 @@ class TestWorktreeBase(unittest.TestCase):
             exclude = (repo / ".git" / "info" / "exclude").read_text(encoding="utf-8")
             self.assertEqual(exclude.count("__pycache__/"), 1)
 
+    def test_veredicto_tolera_adornos_triviales_pero_no_palabras_nuevas(self):
+        for adorno in ("APTO.", "**APTO**", "`APTO`", "APTO!", " APTO "):
+            r = d.validar_formato_revision(f"## Veredicto\n{adorno}\n\n## Hallazgos\n- ninguno")
+            self.assertTrue(r["formato_valido"], adorno)
+            self.assertEqual(r["veredicto"], "APTO")
+        r = d.validar_formato_revision("## Veredicto\nTAL VEZ APTO\n\n## Hallazgos\n- ninguno")
+        self.assertFalse(r["formato_valido"])
+
     def test_base_que_avanza_deja_de_ser_ancestro_del_worktree_viejo(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
