@@ -1,0 +1,11 @@
+model_list:
+  - model_name: a
+    litellm_params: {model: openai/m, api_base: "http://127.0.0.1:4021/v1", api_key: x}
+  - model_name: b
+    litellm_params: {model: openai/m, api_base: "http://127.0.0.1:4020/v1", api_key: x}
+router_settings:
+  num_retries: 0
+  timeout: 10
+  fallbacks: [{a: [b]}]
+  allowed_fails: 1
+  cooldown_time: 8
