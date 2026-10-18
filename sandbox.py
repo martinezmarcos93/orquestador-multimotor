@@ -54,9 +54,11 @@ def _git_comun(wt: Path) -> Path:
     return (p if p.is_absolute() else wt / p).resolve()
 
 
-def envolver(cmd: list[str], *, wt: Path, datos: Path, ro_extra: list[Path] | None = None) -> list[str]:
+def envolver(cmd: list[str], *, wt: Path, datos: Path, ro_extra: list[Path] | None = None,
+             herramientas: list[Path] | None = None) -> list[str]:
     """Devuelve el comando `cmd` ejecutado dentro de bwrap. `datos` es un directorio escribible
-    propio de la corrida que hace de ~/.local/share/opencode (se crea vacío)."""
+    propio de la corrida que hace de ~/.local/share/opencode (se crea vacío). `herramientas` son
+    prefijos (p. ej. ~/.nvm/versions/node/v24.20.0) que se montan de solo lectura y aportan su `bin/` al PATH."""
     home = Path.home()
     exe = shutil.which("bwrap")
     if not exe:
@@ -64,6 +66,8 @@ def envolver(cmd: list[str], *, wt: Path, datos: Path, ro_extra: list[Path] | No
     datos.mkdir(parents=True, exist_ok=True)
     rutas_ro = [Path("/usr"), Path("/etc"), home / ".opencode", home / ".config" / "opencode"]
     rutas_ro += [Path(p) for p in (ro_extra if ro_extra is not None else instrucciones_opencode())]
+    herramientas = [Path(h).expanduser().resolve() for h in (herramientas or [])]
+    rutas_ro += herramientas
     argv = [exe, "--die-with-parent", "--new-session", "--unshare-pid", "--unshare-ipc",
             "--unshare-uts", "--clearenv"]
     for d in ("/bin", "/lib", "/lib64", "/sbin"):
@@ -76,7 +80,8 @@ def envolver(cmd: list[str], *, wt: Path, datos: Path, ro_extra: list[Path] | No
     argv += ["--bind", str(wt), str(wt), "--bind", str(_git_comun(wt)), str(_git_comun(wt)),
              "--bind", str(datos), str(home / ".local" / "share" / "opencode"),
              "--chdir", str(wt)]
-    env = {"PATH": f"{home}/.opencode/bin:/usr/local/bin:/usr/bin:/bin", "HOME": str(home),
+    bins = ":".join(str(h / "bin") for h in herramientas)
+    env = {"PATH": ":".join(x for x in (f"{home}/.opencode/bin", bins, "/usr/local/bin", "/usr/bin", "/bin") if x), "HOME": str(home),
            "LANG": os.environ.get("LANG", "C.UTF-8"), "TERM": "dumb"}
     env.update({k: os.environ[k] for k in ENTORNO_PERMITIDO if k in os.environ})
     for k, v in env.items():

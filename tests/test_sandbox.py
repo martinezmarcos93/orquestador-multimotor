@@ -37,6 +37,18 @@ class ArgvBwrap(unittest.TestCase):
             pares = [(argv[j], argv[j + 1]) for j, a in enumerate(argv[:-1]) if a == "--bind"]
             self.assertNotIn(str(Path.home()), [p[0] for p in pares])
 
+    def test_herramientas_se_montan_ro_y_suman_su_bin_al_path(self):
+        with tempfile.TemporaryDirectory() as t:
+            tmp = Path(t)
+            repo = _repo(tmp)
+            nodo = tmp / "node-x"
+            (nodo / "bin").mkdir(parents=True)
+            argv = sandbox.envolver(["true"], wt=repo, datos=tmp / "d", ro_extra=[], herramientas=[nodo])
+            i = argv.index("--ro-bind", argv.index(str(nodo)) - 2)
+            self.assertEqual(argv[i + 1], argv[i + 2], str(nodo.resolve()))
+            path = argv[argv.index("PATH") + 1]
+            self.assertIn(f"{nodo.resolve()}/bin", path)
+
     def test_modo_invalido_en_encargo(self):
         texto = ('+++\nid="1"\nproyecto="p"\nrepo="/x"\nagente="tester"\ntema="t"\n'
                  'permitidos=["a"]\noraculo=["true"]\nsandbox="docker"\n+++\ncuerpo\n')

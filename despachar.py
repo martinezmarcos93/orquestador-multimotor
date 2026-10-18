@@ -77,6 +77,9 @@ def parsear_encargo(texto: str) -> dict:
     cfg.setdefault("sandbox", sandbox.modo_por_defecto())
     if cfg["sandbox"] not in sandbox.MODOS:
         raise ValueError(f"'sandbox' debe ser uno de {sandbox.MODOS}")
+    herr = cfg.setdefault("sandbox_herramientas", [])
+    if not isinstance(herr, list) or any(not isinstance(h, str) or not h for h in herr):
+        raise ValueError("'sandbox_herramientas' debe ser una lista de rutas (cadenas)")
     if cfg["sandbox"] == "bwrap" and cfg["motor"] != "opencode":
         raise ValueError("'sandbox = \"bwrap\"' solo aplica al motor opencode (Codex trae su propio sandbox)")
     depende_de = cfg.get("depende_de", [])
@@ -269,6 +272,9 @@ def validar_encargo(ruta_encargo: Path, directorio_agentes: Path | None = None, 
             errores.append(f"el agente '{agente}' no está instalado en {agentes}")
     if cfg["agente"] == "higiene" and not cfg.get("exige_baseline_verde", False):
         errores.append("los encargos del agente 'higiene' requieren exige_baseline_verde = true")
+    for h in cfg.get("sandbox_herramientas", []):
+        if not (Path(h).expanduser() / "bin").is_dir():
+            errores.append(f"sandbox_herramientas: {h} no existe o no tiene bin/")
     if cfg.get("sandbox") == "bwrap" and not sandbox.disponible():
         errores.append("sandbox = 'bwrap' pero bwrap no está disponible o no puede crear espacios de nombres")
     if cfg.get("exige_baseline_verde"):
@@ -608,7 +614,7 @@ def confinar(cmd: list[str], cfg: dict, wt: Path, run: Path) -> list[str]:
     """Envuelve el comando de OpenCode en bwrap si el encargo lo pide; si no, lo deja igual."""
     if cfg.get("sandbox") != "bwrap":
         return cmd
-    return sandbox.envolver(cmd, wt=wt, datos=run / "opencode-data")
+    return sandbox.envolver(cmd, wt=wt, datos=run / "opencode-data", herramientas=cfg.get("sandbox_herramientas", []))
 
 
 def preparar_worktree(cfg: dict, repo: Path, base_sha: str) -> tuple[Path, str, bool]:
