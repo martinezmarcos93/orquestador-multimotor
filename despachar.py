@@ -429,6 +429,21 @@ def listar_sucios(wt: Path) -> list[str]:
     return [l[3:] for l in r.stdout.splitlines() if l]
 
 
+def commitear_pendientes(wt: Path, cfg: dict) -> bool:
+    """Commit hecho por el despachador para el motor Codex.
+
+    El sandbox de Codex no puede escribir el gitdir del worktree (vive en el .git del repo,
+    fuera de sus writable_roots), así que el trabajador no puede commitear. Se commitea aquí
+    todo lo pendiente; el alcance, los inmutables y el oráculo se verifican después sobre ese commit.
+    """
+    if not listar_sucios(wt):
+        return False
+    git(wt, "add", "-A")
+    git(wt, "-c", "user.name=orquestador-opencode", "-c", "user.email=orquestador@localhost",
+        "commit", "-q", "-m", f"chore(codex): trabajo del encargo {cfg['id']} ({cfg['tema']})")
+    return True
+
+
 def ejecutar_proceso_con_timeout(cmd: list[str], *, cwd: Path, timeout_s: float,
                                  stdout, stderr, gracia_s: float = 5) -> tuple[int, bool]:
     """Ejecuta un proceso en su propio grupo y termina también a sus descendientes al vencer el plazo."""
@@ -1061,6 +1076,9 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
             if tokens_entrada_observados is None:
                 tokens_entrada_observados = estado["uso"].get("entrada")
 
+        if cfg["motor"] == "codex" and rc == 0 and not timeout:
+            if commitear_pendientes(wt, cfg):
+                etapa(run, "commit del despachador (el sandbox de Codex no escribe el gitdir)")
         base_ref = sha_base_main
         commits = int(git(wt, "rev-list", "--count", f"{base_ref}..HEAD") or 0)
         # Sin detección de renombres: al mover un archivo protegido, deben verse

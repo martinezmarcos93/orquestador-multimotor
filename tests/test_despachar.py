@@ -253,6 +253,19 @@ class TestWorktreeBase(unittest.TestCase):
             exclude = (repo / ".git" / "info" / "exclude").read_text(encoding="utf-8")
             self.assertEqual(exclude.count("__pycache__/"), 1)
 
+    def test_commitear_pendientes_deja_arbol_limpio_y_un_commit(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._repo(repo)
+            cfg = {"id": "7", "tema": "x"}
+            self.assertFalse(d.commitear_pendientes(repo, cfg))
+            (repo / "tests").mkdir()
+            (repo / "tests" / "t.py").write_text("x=1\n", encoding="utf-8")
+            self.assertTrue(d.commitear_pendientes(repo, cfg))
+            self.assertEqual(d.listar_sucios(repo), [])
+            self.assertIn("encargo 7", d.git(repo, "log", "-1", "--format=%s"))
+
     def test_veredicto_tolera_adornos_triviales_pero_no_palabras_nuevas(self):
         for adorno in ("APTO.", "**APTO**", "`APTO`", "APTO!", " APTO "):
             r = d.validar_formato_revision(f"## Veredicto\n{adorno}\n\n## Hallazgos\n- ninguno")
