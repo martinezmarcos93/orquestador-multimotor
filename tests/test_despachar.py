@@ -266,6 +266,22 @@ class TestWorktreeBase(unittest.TestCase):
             self.assertEqual(d.listar_sucios(repo), [])
             self.assertIn("encargo 7", d.git(repo, "log", "-1", "--format=%s"))
 
+    def test_commitear_reporte_solo_si_es_lo_unico_sucio(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._repo(repo)
+            self.assertFalse(d.commitear_reporte(repo))
+            (repo / "REPORTE.md").write_text("ok\n", encoding="utf-8")
+            (repo / "docs" / "opencode" / "x").mkdir(parents=True)
+            (repo / "docs" / "opencode" / "x" / "BITACORA.md").write_text("b\n", encoding="utf-8")
+            self.assertTrue(d.commitear_reporte(repo))
+            self.assertEqual(d.listar_sucios(repo), [])
+            (repo / "REPORTE.md").write_text("otro\n", encoding="utf-8")
+            (repo / "codigo.py").write_text("x=1\n", encoding="utf-8")
+            self.assertFalse(d.commitear_reporte(repo))  # hay un archivo ajeno: no se toca nada
+            self.assertIn("codigo.py", d.listar_sucios(repo))
+
     def test_veredicto_tolera_adornos_triviales_pero_no_palabras_nuevas(self):
         for adorno in ("APTO.", "**APTO**", "`APTO`", "APTO!", " APTO "):
             r = d.validar_formato_revision(f"## Veredicto\n{adorno}\n\n## Hallazgos\n- ninguno")

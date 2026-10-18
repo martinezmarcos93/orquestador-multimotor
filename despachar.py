@@ -444,6 +444,21 @@ def commitear_pendientes(wt: Path, cfg: dict) -> bool:
     return True
 
 
+def commitear_reporte(wt: Path) -> bool:
+    """Commitea REPORTE.md/docs/opencode/** cuando son lo único sin commitear.
+
+    El propio encargo pide dejar REPORTE.md; castigarlo como 'trabajo_sin_commitear' era un falso
+    positivo recurrente (visto en corridas reales). Si hay cualquier otro archivo sucio no se toca nada.
+    """
+    sucios = listar_sucios(wt)
+    if not sucios or fuera_de_alcance(sucios, []):
+        return False
+    git(wt, "add", "-A")
+    git(wt, "-c", "user.name=orquestador-opencode", "-c", "user.email=orquestador@localhost",
+        "commit", "-q", "-m", "docs(opencode): reporte del trabajador")
+    return True
+
+
 def ejecutar_proceso_con_timeout(cmd: list[str], *, cwd: Path, timeout_s: float,
                                  stdout, stderr, gracia_s: float = 5) -> tuple[int, bool]:
     """Ejecuta un proceso en su propio grupo y termina también a sus descendientes al vencer el plazo."""
@@ -1079,6 +1094,8 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         if cfg["motor"] == "codex" and rc == 0 and not timeout:
             if commitear_pendientes(wt, cfg):
                 etapa(run, "commit del despachador (el sandbox de Codex no escribe el gitdir)")
+        if not timeout and commitear_reporte(wt):
+            etapa(run, "commit del despachador: solo quedaba el reporte sin commitear")
         base_ref = sha_base_main
         commits = int(git(wt, "rev-list", "--count", f"{base_ref}..HEAD") or 0)
         # Sin detección de renombres: al mover un archivo protegido, deben verse
