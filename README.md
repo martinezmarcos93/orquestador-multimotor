@@ -102,6 +102,23 @@ Con `motor = "codex"`, el despachador ejecuta `codex exec --approve-for-me --jso
 
 4. **Leé el veredicto** en `runs/<proyecto>-<id>/ronda-N/estado.json`, revisá el diff y decidí. Si el resultado es `pasa`, la vista previa `integracion_previa` informa si la combinación con la base actual parece limpia o tiene conflictos; es solo lectura y no hace merge.
 
+### Ciclo de vida de una tarea: OpenCode, Codex y Antigravity
+
+El ciclo de vida es el mismo para los tres motores: **el director define y acota; el trabajador implementa en una rama/worktree; el oráculo comprueba; el despachador valida alcance y estado; el director revisa; una persona decide si integra**. Cambiar de motor no elimina las verificaciones ni autoriza un merge automático.
+
+1. **Preparar.** Elegir un repositorio de prueba o un proyecto sin secretos ni datos de terceros. Escribir el encargo con base explícita, agente, archivos permitidos, rutas inmutables, oráculo y timeout. Ejecutar `--validar` antes de despachar.
+2. **Preparar el aislamiento.** El despachador crea/reutiliza el worktree y la rama de trabajo, y registra el SHA base. El worktree separa cambios de la rama principal, pero no constituye por sí solo una frontera de seguridad.
+3. **Ejecutar un único motor por encargo.**
+   - **OpenCode (predeterminado):** ejecuta el agente configurado. Puede usarse el sandbox `bwrap` del orquestador como opt-in, sujeto a sus límites documentados.
+   - **Codex CLI (`motor = "codex"`):** ejecuta `codex exec` en modo no interactivo con `workspace-write`, sin acceso de red solicitado y con raíces de escritura explícitas. La validación disponible mostró que el sandbox aún permite leer `$HOME`; no usarlo con secretos o datos sensibles. El despachador realiza el commit cuando corresponde y vuelve a comprobar alcance y oráculo.
+   - **Antigravity CLI (`motor = "antigravity"`):** requiere `agy` instalado y autenticado, además de `antigravity_accepts_host_risk = true` como aceptación explícita del operador. Se invoca en modo headless con salida JSON y `--sandbox`; ese sandbox es *best-effort* y **no se considera aislamiento verificado** sin pruebas específicas del host.
+4. **Capturar la entrega.** Se guardan salida, errores, informe, estado y registro de corrida bajo `runs/`. El despachador interpreta el resultado del motor y no da por terminada la tarea solo porque el modelo afirme haberla completado.
+5. **Verificar.** Ejecutar el oráculo antes/después según la configuración; revisar archivos modificados, rutas inmutables, dependencias, posibles secretos y evidencia del commit. Si falla una compuerta, el resultado se rechaza o queda en estado de error; no se amplían permisos automáticamente.
+6. **Decidir.** El director revisa `estado.json`, `REPORTE.md` y el diff. Puede aprobar, devolver feedback en una nueva ronda o descartar. El límite de rondas y los resultados terminales se respetan.
+7. **Integrar de forma humana.** La vista previa de integración es informativa y de solo lectura. El trabajador no hace push a `main`, y el orquestador no fusiona automáticamente: la integración final requiere revisión y decisión explícitas.
+
+**Regla de seguridad:** `--validar` no ejecuta el modelo; `--dry-run` prepara el entorno sin despachar el modelo. Primero probar el CLI y el contrato de salida con un repositorio desechable. Una prueba de CLI correcta no demuestra que el sandbox aísle el host. No ejecutar tareas reales con Antigravity hasta resolver y documentar esa incertidumbre.
+
 ### Veredictos
 
 | `resultado` | Qué significa | Qué hace el director |
