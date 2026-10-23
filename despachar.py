@@ -27,11 +27,12 @@ from pathlib import Path
 import mutacion
 import procesos
 import sandbox
+import antigravity_cli
 from alcance import (ARCHIVOS_DEPENDENCIAS, MARCAS_NO_SECRETO, PATRON_ASIGNACION_SECRETO, PATRON_RUTA_ABSOLUTA,  # noqa: F401
                     PATRON_TOKEN_PROVEEDOR, SIEMPRE_PERMITIDOS, _glob_a_regex, es_archivo_dependencias,
                     fuera_de_alcance, posible_secreto, violaciones_inmutables)
 from estado_schema import _coincide_tipo_json, _validar_con_schema, validar_estado_v1  # noqa: F401
-from revision import (aprobar_revision, normalizar_veredicto, resumir_revision,  # noqa: F401
+from revision import (aprobar_revision, estado_aceptacion, normalizar_veredicto, resumir_revision,
                       texto_final_de_eventos, validar_formato_revision)
 import uso
 import historial
@@ -72,8 +73,23 @@ def parsear_encargo(texto: str) -> dict:
         mut.setdefault("max", 80)
     cfg.setdefault("base", "main")
     cfg.setdefault("motor", "opencode")
-    if cfg["motor"] not in ("opencode", "codex"):
-        raise ValueError("'motor' debe ser 'opencode' o 'codex'")
+    if cfg["motor"] not in ("opencode", "codex", "antigravity"):
+        raise ValueError("'motor' debe ser 'opencode', 'codex' o 'antigravity'")
+    if cfg["motor"] == "antigravity" and cfg.get("antigravity_accepts_host_risk") is not True:
+        raise ValueError(
+            "motor = 'antigravity' requiere antigravity_accepts_host_risk = true "
+            "tras revisar términos, credenciales y limitaciones del sandbox"
+        )
+    modelo_agy = cfg.get("antigravity_model")
+    if modelo_agy is not None and (
+        cfg["motor"] != "antigravity" or not isinstance(modelo_agy, str) or not modelo_agy.strip()
+    ):
+        raise ValueError("'antigravity_model' requiere motor = 'antigravity' y una cadena no vacía")
+    esfuerzo_agy = cfg.get("antigravity_effort")
+    if esfuerzo_agy is not None and (
+        cfg["motor"] != "antigravity" or esfuerzo_agy not in ("low", "medium", "high")
+    ):
+        raise ValueError("'antigravity_effort' requiere motor = 'antigravity' y low/medium/high")
     cfg.setdefault("sandbox", sandbox.modo_por_defecto())
     if cfg["sandbox"] not in sandbox.MODOS:
         raise ValueError(f"'sandbox' debe ser uno de {sandbox.MODOS}")
@@ -135,7 +151,7 @@ def parsear_encargo(texto: str) -> dict:
     if (not isinstance(cfg["oraculo"], list) or not cfg["oraculo"]
             or any(not isinstance(cmd, str) or not cmd.strip() for cmd in cfg["oraculo"])):
         raise ValueError("'oraculo' debe ser una lista no vacía de comandos no vacíos")
-    for campo in ("revisor", "exige_baseline_verde"):
+    for campo in ("revisor", "exige_baseline_verde", "antigravity_accepts_host_risk"):
         if campo in cfg and not isinstance(cfg[campo], bool):
             raise ValueError(f"'{campo}' debe ser booleano")
     if not isinstance(cfg["timeout_min"], int) or isinstance(cfg["timeout_min"], bool) or cfg["timeout_min"] < 1:
@@ -145,8 +161,8 @@ def parsear_encargo(texto: str) -> dict:
         not isinstance(presupuesto_tokens, int) or isinstance(presupuesto_tokens, bool) or presupuesto_tokens < 1
     ):
         raise ValueError("'presupuesto_tokens' debe ser un entero positivo")
-    if cfg["motor"] == "codex" and presupuesto_tokens is not None:
-        raise ValueError("'presupuesto_tokens' aún no es compatible con el stream JSONL de Codex")
+    if cfg["motor"] in ("codex", "antigravity") and presupuesto_tokens is not None:
+        raise ValueError(f"'presupuesto_tokens' aún no es compatible con el formato de uso de {cfg['motor']}")
     cfg.setdefault("timeout_cola_min", cfg["timeout_min"] + 30)
     if (not isinstance(cfg["timeout_cola_min"], int) or isinstance(cfg["timeout_cola_min"], bool)
             or cfg["timeout_cola_min"] <= cfg["timeout_min"]):
@@ -263,6 +279,13 @@ def validar_encargo(ruta_encargo: Path, directorio_agentes: Path | None = None, 
             errores.append("no se encuentra el ejecutable codex; se requiere Codex CLI para motor = 'codex'")
         if not (RAIZ / "agents" / f"{cfg['agente']}.md").is_file():
             errores.append(f"no existe la definición de rol local agents/{cfg['agente']}.md para Codex")
+    elif cfg["motor"] == "antigravity":
+        requeridos = ["revisor"] if cfg.get("revisor") else []
+        if shutil.which("agy") is None:
+            errores.append("no se encuentra el ejecutable agy; se requiere Antigravity CLI para motor = 'antigravity'")
+        if not (RAIZ / "agents" / f"{cfg['agente']}.md").is_file():
+            errores.append(f"no existe la definición de rol local agents/{cfg['agente']}.md para Antigravity")
+        advertencias.append("Antigravity se ejecuta con credenciales locales; --sandbox es best-effort y no sustituye la revisión de seguridad ni los controles de alcance")
     else:
         requeridos = [cfg["agente"]]
         if cfg.get("revisor"):
@@ -757,9 +780,28 @@ def comando_codex() -> list[str]:
     ]
 
 
+def mensaje_para_antigravity(texto_encargo: str, wt: Path, repo: Path, agente: str) -> str:
+    """Incluye el rol local sin fingir que Antigravity hereda el sandbox de Codex."""
+    ruta_rol = RAIZ / "agents" / f"{agente}.md"
+    texto_rol = ruta_rol.read_text(encoding="utf-8")
+    coincidencia = re.match(r"\A---\s*\n.*?\n---\s*\n(.*)\Z", texto_rol, re.S)
+    cuerpo_rol = coincidencia.group(1).strip() if coincidencia else texto_rol.strip()
+    cuerpo = cuerpo_encargo(texto_encargo).replace(str(repo), str(wt))
+    return (
+        f"Actuás como trabajador {agente} bajo supervisión del orquestador. "
+        f"Trabajá solo dentro del worktree {wt}. No leas ni escribas fuera de él. "
+        "No hagas push, despliegues, cambios de credenciales ni acciones en sistemas externos. "
+        "No intentes eludir restricciones del sandbox; si una operación se bloquea, reportá el bloqueo. "
+        "Tu entrega será verificada por un oráculo externo y revisada por el director.\n\n"
+        f"--- INSTRUCCIONES DEL ROL ---\n{cuerpo_rol}\n\n--- ENCARGO ---\n{cuerpo}"
+    )
+
+
 def mensaje_para_trabajador(cfg: dict, texto_encargo: str, wt: Path, repo: Path) -> str:
     if cfg.get("motor", "opencode") == "codex":
         return mensaje_para_codex(texto_encargo, wt, repo, cfg["agente"])
+    if cfg.get("motor") == "antigravity":
+        return mensaje_para_antigravity(texto_encargo, wt, repo, cfg["agente"])
     return mensaje_para_opencode(texto_encargo, wt, repo)
 
 
@@ -858,6 +900,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         "presupuesto_tokens": cfg.get("presupuesto_tokens"), "depende_de": cfg.get("depende_de", []),
         "espera_rojo": cfg.get("espera_rojo", False), "motor": cfg.get("motor", "opencode"),
         "sandbox": cfg.get("sandbox", "ninguno"),
+        "revisor_requerido": bool(cfg.get("revisor", False)),
     }
     if ronda > MAX_RONDAS and not reevaluar:
         estado["resultado"] = "tope_rondas"
@@ -910,6 +953,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         presupuesto_no_verificable = False
         tokens_entrada_observados = None
         tokens_entrada_parcial = None
+        resultado_antigravity = None
         if reevaluar:
             etapa(run, "reevaluación: no se vuelve a lanzar OpenCode (ni se gasta cuota ni una ronda)")
         else:
@@ -928,6 +972,13 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
             mensaje = mensaje_para_trabajador(cfg, texto, wt, repo)
             if cfg["motor"] == "codex":
                 cmd = comando_codex()
+            elif cfg["motor"] == "antigravity":
+                cmd = antigravity_cli.construir_comando(
+                    mensaje, cfg["timeout_min"],
+                    model=cfg.get("antigravity_model"),
+                    effort=cfg.get("antigravity_effort"),
+                    sandbox=True,
+                )
             else:
                 cmd = ["opencode", "run", "--agent", cfg["agente"], "--dir", str(wt), "--format", "json",
                        "--title", f"enc-{cfg['id']}-r{ronda}", mensaje]
@@ -941,6 +992,19 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                     )
                     if timeout:
                         rc = -1
+            elif cfg["motor"] == "antigravity":
+                with (run / "agy.json").open("w", encoding="utf-8") as out, \
+                     (run / "agy.err").open("w", encoding="utf-8") as err:
+                    rc, timeout = ejecutar_proceso_con_timeout(
+                        cmd, cwd=wt, timeout_s=cfg["timeout_min"] * 60, stdout=out, stderr=err
+                    )
+                salida_agy = (run / "agy.json").read_text(encoding="utf-8")
+                resultado_antigravity = antigravity_cli.interpretar_resultado(salida_agy, rc, timeout)
+                estado["antigravity_status"] = resultado_antigravity.get("status")
+                estado["antigravity_conversation_id"] = resultado_antigravity.get("conversation_id")
+                if resultado_antigravity.get("error"):
+                    estado["error_antigravity"] = resultado_antigravity["error"]
+                    rc = -1
             elif cfg.get("presupuesto_tokens") is not None:
                 monitor = ejecutar_opencode_con_presupuesto(
                     cmd, cwd=wt, timeout_s=cfg["timeout_min"] * 60,
@@ -975,7 +1039,21 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                         rc = -1
                         logger.error("OpenCode excedió %s min; se terminó el grupo de procesos", cfg["timeout_min"])
             estado["duracion_s"] = round(time.time() - t0)
-            estado["uso"] = uso.resumir_archivo(run / "opencode.jsonl")
+            if cfg["motor"] == "antigravity":
+                uso_agy = (resultado_antigravity or {}).get("usage") or {}
+                estado["uso"] = {
+                    "disponible": bool(uso_agy),
+                    "completo": bool(uso_agy),
+                    "pasos": 1 if (resultado_antigravity or {}).get("ok") else 0,
+                    "entrada": uso_agy.get("input_tokens"),
+                    "salida": uso_agy.get("output_tokens"),
+                    "razonamiento": uso_agy.get("thinking_tokens"),
+                    "cache_lectura": uso_agy.get("cache_read_tokens"),
+                    "cache_escritura": None,
+                    "motivo": "agy_json" if uso_agy else "uso_no_disponible",
+                }
+            else:
+                estado["uso"] = uso.resumir_archivo(run / "opencode.jsonl")
             if tokens_entrada_observados is None:
                 tokens_entrada_observados = estado["uso"].get("entrada")
 
@@ -1055,6 +1133,9 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         )
         if cfg["motor"] == "codex" and estado["resultado"] == "error_opencode":
             estado["resultado"] = "error_codex"
+        if (cfg["motor"] == "antigravity" and not timeout and resultado_antigravity
+                and not resultado_antigravity.get("ok")):
+            estado["resultado"] = "error_antigravity"
         if cfg.get("espera_rojo"):
             texto_oraculo_despues = ""
             if log_oraculo.exists() and "offset_oraculo_despues" in locals():
@@ -1124,6 +1205,7 @@ ACCIONES_SIGUIENTES = {
     "sin_cambios": "Confirmar si el encargo ya estaba satisfecho o si faltó trabajo.",
     "error_opencode": "Inspeccionar opencode.err y el estado del worktree antes de reintentar.",
     "error_codex": "Inspeccionar opencode.err y el estado del worktree; Codex no recibió permisos interactivos y pudo ser bloqueado por workspace-write.",
+    "error_antigravity": "Inspeccionar agy.err y agy.json; verificar autenticación, versión, estado de la respuesta y disponibilidad real del sandbox.",
     "timeout": "Inspeccionar logs; dividir el encargo o ajustar timeout_min.",
     "presupuesto_agotado": "El worker alcanzó presupuesto_tokens; revisar la entrega parcial antes de elevar el límite.",
     "presupuesto_no_verificable": "Se detuvo el worker porque el stream no permitió verificar tokens de entrada; revisar formato JSONL y versión de OpenCode.",
@@ -1160,6 +1242,10 @@ def normalizar_estado(estado: dict, inicio_utc: str) -> dict:
     estado["fin_utc"] = datetime.now(timezone.utc).isoformat()
     resultado = estado.get("resultado", "error_despachador")
     aprobacion = estado.get("aprobacion", "no_requerida")
+    requiere_revision = bool(estado.get("revisor_requerido", False))
+    # Los estados históricos no siempre contienen revisor_requerido; el campo se establece
+    # en despachar() desde la configuración antes de persistir el estado.
+    estado["aceptacion"] = estado_aceptacion(resultado, aprobacion, requiere_revision)
     if resultado == "revision_manual" and aprobacion == "revision_error" and estado.get("revision", {}).get("archivos_sucios"):
         estado["siguiente_accion"] = "Commitear o descartar explícitamente los cambios antes de pedir revisión."
     elif estado.get("integracion_previa", {}).get("estado") == "conflictos":
@@ -1213,6 +1299,7 @@ def main() -> int:
     errores_esquema = validar_estado_v1(estado)
     if errores_esquema:
         estado["resultado"] = "error_estado_invalido"
+        estado["aceptacion"] = "bloqueado_por_estado_invalido"
         estado["errores_estado_schema"] = errores_esquema
         estado["siguiente_accion"] = "Corregir la construcción del estado antes de confiar en el veredicto."
     destino = None
