@@ -24,6 +24,12 @@ No tiene dependencias externas: solo la librería estándar.
 
 ---
 
+## Endurecimiento y Antigravity
+
+El roadmap de implementación y los límites deliberadamente aplazados están en [`docs/ROADMAP_ENDURECIMIENTO_ANTIGRAVITY.md`](docs/ROADMAP_ENDURECIMIENTO_ANTIGRAVITY.md). Antigravity es optativo y requiere revisar términos, autenticación y sandbox. Antes de habilitarlo para tareas reales, seguir [`docs/VALIDACION_HOST_ANTIGRAVITY.md`](docs/VALIDACION_HOST_ANTIGRAVITY.md); las pruebas offline no certifican el aislamiento del sistema anfitrión.
+
+---
+
 ## Cómo usar
 
 ### Flujo básico
