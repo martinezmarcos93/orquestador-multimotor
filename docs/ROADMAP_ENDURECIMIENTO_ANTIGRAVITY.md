@@ -1,6 +1,6 @@
 # Roadmap de endurecimiento y expansión de proveedores
 
-Estado: publicado en rama de trabajo; implementación incremental en curso. Antigravity tiene adaptador inicial y pruebas con fixtures; CI #454 aprobada; verificación con el CLI real aún pendiente.
+Estado: publicado en rama de trabajo; implementación incremental en curso. Antigravity tiene adaptador inicial y pruebas con fixtures; CI #454 y #455 aprobadas; se añadió una guía reproducible para la validación en el equipo anfitrión, que sigue pendiente.
 Rama: `feat/roadmap-hardening-antigravity`
 Base: `main`
 Última actualización: 2026-10-23
@@ -49,6 +49,7 @@ Criterio de aceptación: cada veredicto puede vincularse a referencias Git concr
 - La documentación oficial consultada confirma `agy --print`, `--output-format json`, `--print-timeout`, `--model`, `--effort` y `--sandbox`; la integración usa salida JSON final y no activa `--dangerously-skip-permissions`.
 - La documentación oficial advierte que headless depende de credenciales previamente almacenadas y que `--sandbox` puede no contener procesos si no está disponible en el host.
 - Confirmar versión, autenticación y efectividad real del sandbox en el equipo anfitrión antes de ejecutar tareas que escriban código.
+- Seguir la lista de comprobación de `docs/VALIDACION_HOST_ANTIGRAVITY.md`; registrar la evidencia sanitizada sin credenciales ni prompts privados.
 - No instalar herramientas ni ejecutar tareas con permisos amplios de forma implícita.
 - Revisar los términos vigentes de Google antes de usar el proveedor desde una herramienta de orquestación externa; Orkestra documenta una zona gris contractual para ese patrón.
 
@@ -106,5 +107,8 @@ Estas ideas quedan registradas para evaluación futura, pero **no se incorporan 
 - [x] Fase 1.1: compuerta explícita de aceptación agregada; pruebas de contrato añadidas; CI de GitHub Actions #442 aprobada.
 - [x] Fase 1.2: timeout exterior y terminación de grupos ya estaban implementados en la base (\u0060cola.py\u0060, \u0060procesos.py\u0060, \u0060tests/test_cola.py\u0060); se verificó estáticamente y no se duplicará la lógica. Falta ejecutar CI de esta rama.
 - [x] Fase 1.3: la base ya registra SHA inicial/final, SHA inicial del worktree, valida ancestralidad y bloquea worktrees reutilizados sucios o divergentes; las pruebas de regresión existentes pasaron en CI #442. Se conserva esa lógica sin duplicar controles.
-- [ ] Fase 2: adaptador inicial, opciones de configuración y pruebas offline implementadas; CI #454 aprobada; pendiente prueba real autenticada/aislamiento y revisión de términos en el equipo anfitrión.
+- [x] Fase 2.1: adaptador inicial, opciones de configuración y pruebas offline implementadas; CI #454 y #455 aprobadas.
+- [x] Fase 2.2: guía de validación anfitriona añadida en `docs/VALIDACION_HOST_ANTIGRAVITY.md`.
+- [ ] Fase 2.3: pendiente ejecución real autenticada, verificación del contrato de salida y evaluación del aislamiento/los términos en el equipo anfitrión. No se puede certificar desde GitHub.
+- [ ] Fase 2.4: integrar la evidencia de aceptación y decidir explícitamente si Antigravity puede habilitarse para encargos reales.
 - [ ] Fase 3: fallback acotado.
