@@ -75,6 +75,11 @@ def parsear_encargo(texto: str) -> dict:
     cfg.setdefault("motor", "opencode")
     if cfg["motor"] not in ("opencode", "codex", "antigravity"):
         raise ValueError("'motor' debe ser 'opencode', 'codex' o 'antigravity'")
+    if cfg["motor"] == "antigravity" and cfg.get("antigravity_accepts_host_risk") is not True:
+        raise ValueError(
+            "motor = 'antigravity' requiere antigravity_accepts_host_risk = true "
+            "tras revisar términos, credenciales y limitaciones del sandbox"
+        )
     modelo_agy = cfg.get("antigravity_model")
     if modelo_agy is not None and (
         cfg["motor"] != "antigravity" or not isinstance(modelo_agy, str) or not modelo_agy.strip()
@@ -146,7 +151,7 @@ def parsear_encargo(texto: str) -> dict:
     if (not isinstance(cfg["oraculo"], list) or not cfg["oraculo"]
             or any(not isinstance(cmd, str) or not cmd.strip() for cmd in cfg["oraculo"])):
         raise ValueError("'oraculo' debe ser una lista no vacía de comandos no vacíos")
-    for campo in ("revisor", "exige_baseline_verde"):
+    for campo in ("revisor", "exige_baseline_verde", "antigravity_accepts_host_risk"):
         if campo in cfg and not isinstance(cfg[campo], bool):
             raise ValueError(f"'{campo}' debe ser booleano")
     if not isinstance(cfg["timeout_min"], int) or isinstance(cfg["timeout_min"], bool) or cfg["timeout_min"] < 1:
