@@ -1,6 +1,6 @@
 # Roadmap de endurecimiento y expansión de proveedores
 
-Estado: publicado en rama de trabajo; implementación incremental en curso.
+Estado: publicado en rama de trabajo; implementación incremental en curso. Antigravity tiene adaptador inicial y pruebas con fixtures; verificación con el CLI real aún pendiente.
 Rama: `feat/roadmap-hardening-antigravity`
 Base: `main`
 Última actualización: 2026-10-23
@@ -46,11 +46,13 @@ Criterio de aceptación: cada veredicto puede vincularse a referencias Git concr
 ### Fase 2 — Antigravity como motor opcional
 
 #### 4. Verificar el contrato real de `agy`
-- Confirmar disponibilidad de CLI, autenticación, modo headless, flags soportados y formato de salida en el entorno anfitrión.
+- La documentación oficial consultada confirma `agy --print`, `--output-format json`, `--print-timeout`, `--model`, `--effort` y `--sandbox`; la integración usa salida JSON final y no activa `--dangerously-skip-permissions`.
+- La documentación oficial advierte que headless depende de credenciales previamente almacenadas y que `--sandbox` puede no contener procesos si no está disponible en el host.
+- Confirmar versión, autenticación y efectividad real del sandbox en el equipo anfitrión antes de ejecutar tareas que escriban código.
 - No instalar herramientas ni ejecutar tareas con permisos amplios de forma implícita.
-- Registrar la versión verificada y fixtures de salida/error para pruebas sin consumir cuota.
+- Revisar los términos vigentes de Google antes de usar el proveedor desde una herramienta de orquestación externa; Orkestra documenta una zona gris contractual para ese patrón.
 
-Criterio de aceptación: contrato de invocación documentado con evidencia del entorno; si el CLI no está disponible, la suite unitaria sigue funcionando con dobles.
+Criterio de aceptación: contrato de invocación cubierto por fixtures y verificación en el entorno anfitrión registrada por separado; si el CLI no está disponible, la suite unitaria sigue funcionando con dobles.
 
 #### 5. Implementar adaptador aislado
 - Añadir Antigravity como motor optativo sin alterar el motor predeterminado.
@@ -104,5 +106,5 @@ Estas ideas quedan registradas para evaluación futura, pero **no se incorporan 
 - [x] Fase 1.1: compuerta explícita de aceptación agregada; pruebas de contrato añadidas; CI de GitHub Actions #442 aprobada.
 - [x] Fase 1.2: timeout exterior y terminación de grupos ya estaban implementados en la base (\u0060cola.py\u0060, \u0060procesos.py\u0060, \u0060tests/test_cola.py\u0060); se verificó estáticamente y no se duplicará la lógica. Falta ejecutar CI de esta rama.
 - [x] Fase 1.3: la base ya registra SHA inicial/final, SHA inicial del worktree, valida ancestralidad y bloquea worktrees reutilizados sucios o divergentes; las pruebas de regresión existentes pasaron en CI #442. Se conserva esa lógica sin duplicar controles.
-- [ ] Fase 2: verificación e integración de Antigravity.
+- [ ] Fase 2: adaptador inicial, opciones de configuración y pruebas offline implementadas; pendiente CI de esta iteración y prueba real autenticada/aislamiento en el equipo anfitrión.
 - [ ] Fase 3: fallback acotado.
