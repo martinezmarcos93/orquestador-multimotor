@@ -1218,6 +1218,7 @@ def main() -> int:
     errores_esquema = validar_estado_v1(estado)
     if errores_esquema:
         estado["resultado"] = "error_estado_invalido"
+        estado["aceptacion"] = "bloqueado_por_estado_invalido"
         estado["errores_estado_schema"] = errores_esquema
         estado["siguiente_accion"] = "Corregir la construcción del estado antes de confiar en el veredicto."
     destino = None
