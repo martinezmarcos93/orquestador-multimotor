@@ -31,7 +31,7 @@ from alcance import (ARCHIVOS_DEPENDENCIAS, MARCAS_NO_SECRETO, PATRON_ASIGNACION
                     PATRON_TOKEN_PROVEEDOR, SIEMPRE_PERMITIDOS, _glob_a_regex, es_archivo_dependencias,
                     fuera_de_alcance, posible_secreto, violaciones_inmutables)
 from estado_schema import _coincide_tipo_json, _validar_con_schema, validar_estado_v1  # noqa: F401
-from revision import (aprobar_revision, normalizar_veredicto, resumir_revision,  # noqa: F401
+from revision import (aprobar_revision, estado_aceptacion, normalizar_veredicto, resumir_revision,
                       texto_final_de_eventos, validar_formato_revision)
 import uso
 import historial
@@ -858,6 +858,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         "presupuesto_tokens": cfg.get("presupuesto_tokens"), "depende_de": cfg.get("depende_de", []),
         "espera_rojo": cfg.get("espera_rojo", False), "motor": cfg.get("motor", "opencode"),
         "sandbox": cfg.get("sandbox", "ninguno"),
+        "revisor_requerido": bool(cfg.get("revisor", False)),
     }
     if ronda > MAX_RONDAS and not reevaluar:
         estado["resultado"] = "tope_rondas"
@@ -1160,6 +1161,10 @@ def normalizar_estado(estado: dict, inicio_utc: str) -> dict:
     estado["fin_utc"] = datetime.now(timezone.utc).isoformat()
     resultado = estado.get("resultado", "error_despachador")
     aprobacion = estado.get("aprobacion", "no_requerida")
+    requiere_revision = bool(estado.get("revisor_requerido", False))
+    # Los estados históricos no siempre contienen revisor_requerido; el campo se establece
+    # en despachar() desde la configuración antes de persistir el estado.
+    estado["aceptacion"] = estado_aceptacion(resultado, aprobacion, requiere_revision)
     if resultado == "revision_manual" and aprobacion == "revision_error" and estado.get("revision", {}).get("archivos_sucios"):
         estado["siguiente_accion"] = "Commitear o descartar explícitamente los cambios antes de pedir revisión."
     elif estado.get("integracion_previa", {}).get("estado") == "conflictos":
