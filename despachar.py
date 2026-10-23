@@ -75,6 +75,16 @@ def parsear_encargo(texto: str) -> dict:
     cfg.setdefault("motor", "opencode")
     if cfg["motor"] not in ("opencode", "codex", "antigravity"):
         raise ValueError("'motor' debe ser 'opencode', 'codex' o 'antigravity'")
+    modelo_agy = cfg.get("antigravity_model")
+    if modelo_agy is not None and (
+        cfg["motor"] != "antigravity" or not isinstance(modelo_agy, str) or not modelo_agy.strip()
+    ):
+        raise ValueError("'antigravity_model' requiere motor = 'antigravity' y una cadena no vacía")
+    esfuerzo_agy = cfg.get("antigravity_effort")
+    if esfuerzo_agy is not None and (
+        cfg["motor"] != "antigravity" or esfuerzo_agy not in ("low", "medium", "high")
+    ):
+        raise ValueError("'antigravity_effort' requiere motor = 'antigravity' y low/medium/high")
     cfg.setdefault("sandbox", sandbox.modo_por_defecto())
     if cfg["sandbox"] not in sandbox.MODOS:
         raise ValueError(f"'sandbox' debe ser uno de {sandbox.MODOS}")
@@ -1118,7 +1128,8 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         )
         if cfg["motor"] == "codex" and estado["resultado"] == "error_opencode":
             estado["resultado"] = "error_codex"
-        if cfg["motor"] == "antigravity" and estado["resultado"] == "error_opencode":
+        if (cfg["motor"] == "antigravity" and not timeout and resultado_antigravity
+                and not resultado_antigravity.get("ok")):
             estado["resultado"] = "error_antigravity"
         if cfg.get("espera_rojo"):
             texto_oraculo_despues = ""
