@@ -6,8 +6,8 @@ Fecha: 2026-10-13. Esta ampliación concilia la lista de `docs/propuestas.md` co
 
 1. **Referencia Git estable.** `despachar()` captura el SHA de la base para una corrida, pero `preparar_worktree()` reutiliza el worktree existente por proyecto/tema y devuelve la rama actual. Hace falta validar esa identidad y registrar la referencia exacta que se usó en cada evaluación.
 2. **Worktree no equivale a sandbox de seguridad.** Las instrucciones del agente y la comprobación posterior de alcance no impiden por sí mismas lecturas o efectos fuera del directorio. `enlazar_entornos()` enlaza `.venv` y `node_modules` del repositorio original, que pueden ser mutables o contener acceso indirecto a recursos locales.
-3. **Revisión obligatoria no cerrada como compuerta.** Cuando se solicita `revisor = true`, el estado principal se decide antes de la revisión; la salida de revisión se agrega después. Un error o un resultado malformado del revisor no cambia necesariamente `resultado`.
-4. **Timeout del proceso exterior.** El trabajador tiene timeout dentro del despachador, pero `cola.runner_subproceso()` espera a `despachar.py` sin timeout propio. Un bloqueo fuera del proceso de OpenCode puede dejar la cola esperando.
+3. **Compuerta de aceptación explícita (trabajo de esta rama).** `resultado` sigue representando el resultado técnico; `aprobacion` representa al revisor y `aceptacion` indica si el resultado queda bloqueado o pendiente de la decisión final del director. Un veredicto APTO no autoriza merge automático.
+4. **Timeout exterior del proceso (implementado en la base).** `cola.runner_subproceso()` ya impone `timeout_cola_min`, captura diagnóstico y termina el grupo de procesos; `tests/test_cola.py` incluye pruebas de timeout y descendientes. En esta rama se conserva esa implementación y se vuelve a ejecutar CI antes de declarar aceptación.
 5. **Detectores heurísticos.** La detección de secretos mediante regex y la lista de archivos de dependencias son filtros incompletos. Deben tener cobertura de regresión y documentación de límites; no se deben presentar como garantías.
 6. **Interpretación de mutación.** La puntuación describe la proporción de mutantes seleccionados que los tests matan. No es una puntuación global de calidad. Deben mostrarse universo total, cantidad seleccionada, sobrevivientes y errores; las mutaciones equivalentes son una limitación conocida.
 
@@ -98,7 +98,7 @@ Cada ítem debe informar cuatro estados por separado: código implementado, test
 
 ### S0.1 — Base Git y reutilización del worktree
 
-Estado: **implementación parcial; aceptación funcional pendiente**.
+Estado: **compuerta explícita añadida en esta rama; CI y aceptación funcional pendientes**.
 
 Cambios en esta rama:
 
@@ -139,7 +139,7 @@ No se ejecutó OpenCode ni se hicieron pruebas en vivo. No se modificó ni se fu
 
 ### S0.4 — Timeout exterior de la cola
 
-Estado: **implementación parcial; aceptación aún no demostrada**.
+Estado: **implementación y pruebas de regresión ya presentes en la base; CI de esta rama pendiente**.
 
 Cambios en esta rama:
 
