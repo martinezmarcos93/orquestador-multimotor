@@ -167,6 +167,21 @@
     "aprobacion": {
       "type": "string"
     },
+    "aceptacion": {
+      "type": "string",
+      "enum": [
+        "bloqueado_por_resultado_tecnico",
+        "pendiente_decision_director",
+        "revision_aprobada_pendiente_decision_director",
+        "bloqueado_por_observaciones",
+        "bloqueado_por_error_revision",
+        "bloqueado_por_revision",
+        "bloqueado_por_estado_invalido"
+      ]
+    },
+    "revisor_requerido": {
+      "type": "boolean"
+    },
     "nota": {
       "type": "string"
     },
