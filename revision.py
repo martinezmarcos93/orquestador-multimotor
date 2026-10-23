@@ -68,3 +68,24 @@ def aprobar_revision(revision: dict | None) -> str:
             return "revision_inconsistente"
         return "aprobado"
     return "revision_formato_invalido"
+
+
+def estado_aceptacion(resultado: str, aprobacion: str, requiere_revision: bool) -> str:
+    """Deriva aceptación operativa sin confundir tests verdes con aprobación final.
+
+    La aprobación del revisor es una compuerta intermedia: la decisión final de integrar
+    sigue siendo del director y nunca se infiere de un resultado técnico por sí solo.
+    """
+    if resultado not in ("pasa", "tests_debiles"):
+        return "bloqueado_por_resultado_tecnico"
+    if not requiere_revision:
+        return "pendiente_decision_director"
+    if aprobacion == "aprobado":
+        return "revision_aprobada_pendiente_decision_director"
+    if aprobacion == "con_observaciones":
+        return "bloqueado_por_observaciones"
+    if aprobacion in ("revision_error", "revision_formato_invalido", "revision_inconsistente"):
+        return "bloqueado_por_error_revision"
+    if aprobacion == "bloqueado_por_resultado_tecnico":
+        return "bloqueado_por_resultado_tecnico"
+    return "bloqueado_por_revision"
