@@ -94,6 +94,22 @@ class TestParseo(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no es compatible"):
             d.parsear_encargo(con_presupuesto)
 
+    def test_motor_antigravity_es_optativo_y_valida_opciones(self):
+        texto = ENCARGO.replace("+++\\n# Encargo", 'motor = "antigravity"\\nantigravity_model = "gemini-test"\\nantigravity_effort = "high"\\n+++\\n# Encargo')
+        cfg = d.parsear_encargo(texto)
+        self.assertEqual(cfg["motor"], "antigravity")
+        self.assertEqual(cfg["antigravity_model"], "gemini-test")
+        self.assertEqual(cfg["antigravity_effort"], "high")
+        presupuesto = texto.replace("+++\\n# Encargo", 'presupuesto_tokens = 100\\n+++\\n# Encargo')
+        with self.assertRaisesRegex(ValueError, "no es compatible"):
+            d.parsear_encargo(presupuesto)
+        invalid_effort = texto.replace('antigravity_effort = "high"', 'antigravity_effort = "maximum"')
+        with self.assertRaisesRegex(ValueError, "antigravity_effort"):
+            d.parsear_encargo(invalid_effort)
+        invalid_option = ENCARGO.replace("+++\\n# Encargo", 'antigravity_model = "gemini-test"\\n+++\\n# Encargo')
+        with self.assertRaisesRegex(ValueError, "antigravity_model"):
+            d.parsear_encargo(invalid_option)
+
     def test_presupuesto_tokens_debe_ser_entero_positivo(self):
         texto = ENCARGO.replace("+++\n# Encargo", 'presupuesto_tokens = 100\n+++\n# Encargo')
         self.assertEqual(d.parsear_encargo(texto)["presupuesto_tokens"], 100)
