@@ -1,225 +1,106 @@
-# Orquestador OpenCode — Claude dirige, los trabajadores obedecen
+# Orquestador multimotor
 
-Sistema de orquestación en el que Claude Code actúa como **director** y modelos gratuitos de OpenCode como **trabajadores**. Claude escribe un encargo acotado, el despachador lo ejecuta en un worktree de trabajo (no es un sandbox de seguridad por sí mismo), verifica el resultado con un oráculo y Claude revisa y decide: integrar, dar una orden nueva con feedback o tomarlo él.
+**Claude coordina. OpenCode, Codex y Antigravity ejecutan. El oráculo verifica. Una persona decide qué se integra.**
 
-> **Principio fundamental:** Claude no controla terminales, coordina trabajo. La comunicación es por archivos y el veredicto sale de un oráculo ejecutable, no del "listo" de quien trabajó.
+Orquestador de tareas de programación mediante encargos acotados, ramas/worktrees, pruebas automáticas y revisión de cambios. Ningún trabajador integra directamente a `main`.
 
----
+## El flujo de trabajo
 
-## Instalación rápida
+```text
+                    ┌──────────────────────────┐
+                    │     CLAUDE · DIRECTOR    │
+                    │ define tarea y límites   │
+                    │ revisa y decide          │
+                    └────────────┬─────────────┘
+                                 │ ENCARGO.md
+                                 ▼
+                    ┌──────────────────────────┐
+                    │   DESPACHADOR · Python   │
+                    │ valida · crea worktree   │
+                    │ registra la ejecución    │
+                    └────────────┬─────────────┘
+                                 │ selecciona UN motor
+              ┌──────────────────┼──────────────────┐
+              ▼                  ▼                  ▼
+     ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+     │ OPENCODE       │ │ CODEX CLI      │ │ ANTIGRAVITY CLI│
+     │ agente worker  │ │ codex exec     │ │ agy --print    │
+     └───────┬────────┘ └───────┬────────┘ └───────┬────────┘
+             └──────────────────┼──────────────────┘
+                                ▼
+                    ┌──────────────────────────┐
+                    │ VERIFICACIÓN AUTOMÁTICA  │
+                    │ oráculo · alcance        │
+                    │ rutas protegidas · diff  │
+                    └────────────┬─────────────┘
+                                 │ estado.json + reporte
+                                 ▼
+                    ┌──────────────────────────┐
+                    │ CLAUDE REVISA LA ENTREGA │
+                    └────────────┬─────────────┘
+                                 ▼
+                    ┌──────────────────────────┐
+                    │ DECISIÓN HUMANA          │
+                    │ integrar / pedir cambios │
+                    │ / descartar              │
+                    └──────────────────────────┘
+```
 
-**Requisitos:** Python 3.11+, `git`, [`opencode`](https://opencode.ai) con un proveedor configurado (en este caso un proxy LiteLLM local con fallback entre modelos gratuitos) y Claude Code.
+**Roles:** Claude no es un trabajador más: dirige, aporta contexto, evalúa el resultado y decide el siguiente paso. El despachador prepara y controla la ejecución. OpenCode, Codex CLI o Antigravity realizan la tarea asignada —un motor por encargo—. El oráculo comprueba el resultado; no se confía únicamente en lo que afirme el modelo.
+
+## Instalación y comprobación
+
+Requisitos: Python 3.11+, Git y el CLI que quieras usar, instalado y autenticado.
 
 ```bash
-git clone https://github.com/martinezmarcos93/orquestador-opencode.git
-cd orquestador-opencode
-./instalar.sh          # copia los agentes a ~/.config/opencode/agents y la skill a ~/.claude/skills
-bash verificar.sh       # compilación, ayuda CLI y suite unitaria; no llama modelos ni requiere red
-bash verificar.sh --installed  # además detecta agentes/skill instalados ausentes o desactualizados
+git clone https://github.com/martinezmarcos93/orquestador-multimotor.git
+cd orquestador-multimotor
+bash verificar.sh
 python3 -m unittest discover -s tests
-python3 despachar.py ENCARGO.md --validar  # valida sin crear worktree ni ejecutar el oráculo/modelo
 ```
 
-No tiene dependencias externas: solo la librería estándar.
+La suite de verificación no necesita lanzar modelos ni requiere red.
 
----
+## Uso mínimo
 
-## Endurecimiento y Antigravity
-
-El roadmap de implementación y los límites deliberadamente aplazados están en [`docs/ROADMAP_ENDURECIMIENTO_ANTIGRAVITY.md`](docs/ROADMAP_ENDURECIMIENTO_ANTIGRAVITY.md). Antigravity es optativo y requiere revisar términos, autenticación y sandbox. Antes de habilitarlo para tareas reales, seguir [`docs/VALIDACION_HOST_ANTIGRAVITY.md`](docs/VALIDACION_HOST_ANTIGRAVITY.md); las pruebas offline no certifican el aislamiento del sistema anfitrión.
-
----
-
-## Cómo usar
-
-### Flujo básico
-
-1. **Elegí** un proyecto de bajo calibre (git, en disco ext4) y una tarea chica con oráculo verificable.
-2. **Redactá** el encargo en `_encargos/<proyecto>/NNN-tema.md`, empezando por el bloque de configuración:
-
-   ```toml
-   +++
-   id = "001"
-   proyecto = "mercado-sandbox"
-   repo = "/home/usuario/src/mercado-sandbox"
-   agente = "tester"
-   tema = "tests-nucleo"
-   base = "main"
-   permitidos = ["tests/**"]
-   oraculo = [".venv/bin/python -m pytest -q"]
-   timeout_min = 20
-   # Opcional: Codex CLI con sandbox workspace-write
-   # motor = "codex"
-   # Opcional: Antigravity CLI (agy), headless y con --sandbox solicitado
-   # motor = "antigravity"
-   # antigravity_accepts_host_risk = true  # solo tras revisar términos y límites del sandbox
-   # antigravity_model = "slug-exacto-de-agy-models"
-   # antigravity_effort = "medium"  # low, medium o high
-   # Opcional: presupuesto máximo de tokens de entrada, vigilado durante la ejecución
-   # presupuesto_tokens = 400000
-   # Solo si el oráculo necesita usar el entorno del repo original (reduce aislamiento):
-   # permitir_entornos_compartidos = true
-   revisor = true                 # opcional: revisión de solo lectura tras un "pasa"
-   exige_baseline_verde = false   # true para higiene: sin baseline verde no se lanza nada
-
-   [mutacion]                     # opcional: prueba de mutación (Python)
-   archivos = ["market_analyzer.py"]
-   funciones = ["calcular_signal"]  # opcional: limita las funciones a mutar
-   umbral = 0.8
-   +++
-   ```
-
-   En un encargo de `implementador` que deba preservar los tests, agregá `inmutables = ["tests/**"]` y mantené el código de producción dentro de `permitidos`; el patrón protegido bloquea cualquier cambio en esas rutas, incluso archivos nuevos.
-
-   Para una cadena test-first, el encargo `tester` usa `espera_rojo = true` y `espera_rojo_contiene = ["nombre_del_test", "AssertionError"]`, con `permitidos = ["tests/**"]`. El implementador declara `depende_de = ["001"]`, `inmutables = ["tests/**"]` y `permitidos = ["src/**"]`. Pasá ambos encargos a `cola.py` en el mismo lote. Por ahora cada encargo admite una sola dependencia y el tester debe tener baseline verde antes de añadir los tests.
-
-3. **Despachá** (desde Claude, con `run_in_background`; se reactiva solo al terminar):
-
+1. Crear un encargo Markdown con bloque de configuración TOML: repositorio, rama base, agente, archivos permitidos, oráculo y timeout.
+2. Validar y, primero, simular:
    ```bash
-   python3 despachar.py ENCARGO.md                  # un encargo
-   python3 cola.py E1.md E2.md E3.md --max 2        # varios en paralelo (máx. 3), sin pisarse
-   python3 despachar.py ENCARGO.md --validar        # valida configuración, repo, base, agentes y oráculo
-   python3 despachar.py ENCARGO.md --dry-run        # prepara el worktree sin lanzar oráculo/modelo
-   python3 despachar.py ENCARGO.md --reevaluar      # repite oráculo, alcance, mutación y revisor sin lanzar OpenCode
-   python3 despachar.py ENCARGO.md --revisar-solo   # solo el revisor, sobre el worktree existente
-   python3 despachar.py ENCARGO.md --visor          # un panel por corrida en Herdr (si corrés dentro de Herdr)
-   python3 historial.py --por agente              # resume resultados y tokens conocidos desde el ledger
-   ```
+   python3 despachar.py ENCARGO.md --validar
+   python3 despachar.py ENCARGO.md --dry-run
+   ``
+3. Ejecutar el encargo solo después de revisar la configuración y el riesgo.
+4. Revisar `runs/<proyecto>-<id>/ronda-N/estado.json`, `REPORTE.md` y el diff.
+5. Integrar manualmente solo después de revisar y aprobar.
 
-La CLI valida automáticamente repo, referencia base, tipos de configuración y agentes instalados antes de despachar o revisar. `--validar` no crea worktree ni ejecuta oráculos o modelos. Los oráculos tienen un timeout por comando y, al agotarse, se termina su grupo de procesos. Un worktree reutilizado con cambios sin commitear se bloquea para evitar mezclar trabajo anterior.
-Cada corrida añade un registro compacto a `runs/historial.jsonl`. El uso se extrae de eventos `step-finish` presentes en JSONL; si faltan datos, se muestran como desconocidos y no como cero. El ledger no guarda prompts ni diffs.
-### Cola nocturna (`nocturna.py` + systemd)
+En el encargo se selecciona el motor con `motor = "opencode"`, `motor = "codex"` o `motor = "antigravity"`. OpenCode es el predeterminado.
 
-Carpeta con `pendientes/`, `en-curso/`, `listos/`, `fallidos/` y `resumenes/`. `python3 nocturna.py --carpeta ~/orquestador-cola --max 2` valida cada encargo de `pendientes/` (preflight), los pasa a `en-curso/`, corre `cola.py` con todos juntos (así respeta `depende_de`) y deja cada uno en `listos/` (`pasa`/`tests_preparados` con aprobación válida) o `fallidos/` (con un `.nota.txt`), más un resumen en `resumenes/AAAA-MM-DD-HHMM.md`. Una sola instancia (flock). Un encargo que quedó en `en-curso/` por una interrupción **no se relanza solo**: pasa a `fallidos/` como interrumpido. SIGTERM a `nocturna.py`, `cola.py` o `despachar.py` termina también a toda su descendencia (`procesos.py`). Las unidades `systemd/orquestador-nocturno.{service,timer}` **no están instaladas ni habilitadas**: ajustá las rutas, copiálas a `~/.config/systemd/user/` y activá el timer solo cuando quieras que gaste cuota sin supervisión.
+## Diferencias y límites de los motores
 
-### Sandbox de sistema de archivos (`sandbox = "bwrap"`)
-
-Opt-in por encargo (o `ORQUESTADOR_SANDBOX=bwrap` para todos). Ejecuta OpenCode (trabajador y revisor) dentro de bubblewrap: `$HOME` y `/tmp` vacíos, `/usr` y `/etc` de solo lectura, entorno limpio (solo `PATH`, `HOME`, `LANG`, `TERM` y `LITELLM_MASTER_KEY`), base de datos de OpenCode propia de la corrida y **sin** `auth.json`. Solo ve en escritura el worktree y el `.git` común del repo (necesario para commitear), y en lectura el binario/configuración de OpenCode y las `instructions` de `opencode.jsonc`. **No aísla la red** (el proxy LiteLLM está en 127.0.0.1) ni impide escribir en otras ramas del mismo repo. `sandbox_herramientas = ["~/.nvm/versions/node/v24.20.0"]` monta prefijos de herramientas de solo lectura y suma su `bin/` al PATH (necesario para proyectos Node con nvm, porque dentro no hay `$HOME`). **Sigue siendo opt-in**: con `permitir_entornos_compartidos` (symlinks a `.venv` del repo original) o proyectos que dependan de cachés en `$HOME`, el worker no vería esos recursos. `--validar` falla si bwrap no puede crear espacios de nombres o una herramienta no existe. Evidencia: `tests/test_sandbox.py` (centinela en `$HOME` invisible, `/usr` de solo lectura, commit posible) y dos corridas reales (trabajador y revisor) el 2026-10-17.
-
-El backend predeterminado es OpenCode. Con `motor = "antigravity"` (junto con `antigravity_accepts_host_risk = true` tras revisar el riesgo), el despachador invoca `agy --print ... --output-format json --print-timeout Nm --sandbox`, valida el sobre final (`status = SUCCESS` y `response` no vacía) y después aplica los mismos controles de alcance y oráculo. `antigravity_model` y `antigravity_effort` son opcionales. El adaptador no usa `--dangerously-skip-permissions`; el modo `--sandbox` es best-effort y puede no proporcionar contención si el sistema anfitrión no lo soporta. Requiere `agy` instalado y autenticado previamente. **Antes de usarlo, revisá los términos vigentes de Google**: la documentación de Orkestra advierte una zona gris respecto del acceso mediante software de terceros. El uso y las credenciales quedan bajo responsabilidad del operador. `presupuesto_tokens` no está habilitado para Antigravity.
-Con `motor = "codex"`, el despachador ejecuta `codex exec --approve-for-me --json -`, con `sandbox_workspace_write.writable_roots=[]` y `network_access=false`: Codex aplica su revisión automática de solicitudes dentro de `workspace-write` y no abre prompts interactivos al usuario. Esto no delega cada aprobación a Claude; Claude revisa la entrega final, y las operaciones fuera del sandbox deben fallar cerradas. No controla sesiones abiertas manualmente en Codex Desktop/IDE. Probado en vivo (2026-10-17): escribir fuera del worktree y usar la red fallan, pero **el sandbox de Codex sí permite leer `$HOME`**; úsalo solo con proyectos sin secretos ni datos de terceros. Como el sandbox no puede escribir el gitdir del worktree, el despachador hace el commit por el trabajador (`commitear_pendientes`) y verifica alcance y oráculo sobre ese commit. `presupuesto_tokens` aún no es compatible con el stream JSONL de Codex y se rechaza en preflight.
-   ```
-
-4. **Leé el veredicto** en `runs/<proyecto>-<id>/ronda-N/estado.json`, revisá el diff y decidí. Si el resultado es `pasa`, la vista previa `integracion_previa` informa si la combinación con la base actual parece limpia o tiene conflictos; es solo lectura y no hace merge.
-
-### Ciclo de vida de una tarea: OpenCode, Codex y Antigravity
-
-El ciclo de vida es el mismo para los tres motores: **el director define y acota; el trabajador implementa en una rama/worktree; el oráculo comprueba; el despachador valida alcance y estado; el director revisa; una persona decide si integra**. Cambiar de motor no elimina las verificaciones ni autoriza un merge automático.
-
-1. **Preparar.** Elegir un repositorio de prueba o un proyecto sin secretos ni datos de terceros. Escribir el encargo con base explícita, agente, archivos permitidos, rutas inmutables, oráculo y timeout. Ejecutar `--validar` antes de despachar.
-2. **Preparar el aislamiento.** El despachador crea/reutiliza el worktree y la rama de trabajo, y registra el SHA base. El worktree separa cambios de la rama principal, pero no constituye por sí solo una frontera de seguridad.
-3. **Ejecutar un único motor por encargo.**
-   - **OpenCode (predeterminado):** ejecuta el agente configurado. Puede usarse el sandbox `bwrap` del orquestador como opt-in, sujeto a sus límites documentados.
-   - **Codex CLI (`motor = "codex"`):** ejecuta `codex exec` en modo no interactivo con `workspace-write`, sin acceso de red solicitado y con raíces de escritura explícitas. La validación disponible mostró que el sandbox aún permite leer `$HOME`; no usarlo con secretos o datos sensibles. El despachador realiza el commit cuando corresponde y vuelve a comprobar alcance y oráculo.
-   - **Antigravity CLI (`motor = "antigravity"`):** requiere `agy` instalado y autenticado, además de `antigravity_accepts_host_risk = true` como aceptación explícita del operador. Se invoca en modo headless con salida JSON y `--sandbox`; ese sandbox es *best-effort* y **no se considera aislamiento verificado** sin pruebas específicas del host.
-4. **Capturar la entrega.** Se guardan salida, errores, informe, estado y registro de corrida bajo `runs/`. El despachador interpreta el resultado del motor y no da por terminada la tarea solo porque el modelo afirme haberla completado.
-5. **Verificar.** Ejecutar el oráculo antes/después según la configuración; revisar archivos modificados, rutas inmutables, dependencias, posibles secretos y evidencia del commit. Si falla una compuerta, el resultado se rechaza o queda en estado de error; no se amplían permisos automáticamente.
-6. **Decidir.** El director revisa `estado.json`, `REPORTE.md` y el diff. Puede aprobar, devolver feedback en una nueva ronda o descartar. El límite de rondas y los resultados terminales se respetan.
-7. **Integrar de forma humana.** La vista previa de integración es informativa y de solo lectura. El trabajador no hace push a `main`, y el orquestador no fusiona automáticamente: la integración final requiere revisión y decisión explícitas.
-
-**Regla de seguridad:** `--validar` no ejecuta el modelo; `--dry-run` prepara el entorno sin despachar el modelo. Primero probar el CLI y el contrato de salida con un repositorio desechable. Una prueba de CLI correcta no demuestra que el sandbox aísle el host. No ejecutar tareas reales con Antigravity hasta resolver y documentar esa incertidumbre.
-
-### Veredictos
-
-| `resultado` | Qué significa | Qué hace el director |
+| Motor | Ejecución | Consideración principal |
 |---|---|---|
-| `pasa` | Oráculo verde, dentro de alcance (y mutación sobre el umbral, si se pidió) | Revisa el diff y propone integrar (el merge es humano) |
-| `tests_debiles` | Oráculo verde, pero la prueba de mutación quedó bajo el umbral | Nueva ronda: pasarle los mutantes sobrevivientes |
-| `error_mutacion` / `mutacion_sin_candidatos` | La evaluación de mutación falló o no encontró sitios para mutar | Corregir la evaluación/configuración; no se aprueba por puntaje ausente |
-| `baseline_rojo` | El encargo exige baseline verde y no lo hay | Arreglar el baseline antes de delegar |
-| `falla_oraculo` | Los tests no pasan | Nueva ronda con feedback concreto |
-| `sin_cambios` / `trabajo_sin_commitear` | No hizo nada, o dejó cambios sueltos | Nueva ronda o los commitea |
-| `fuera_de_alcance` | Tocó archivos no permitidos | Descarta o devuelve sin leer el diff |
-| `viola_inmutables` | Modificó, borró o renombró una ruta protegida | Rechaza la entrega; omite oráculo/mutación para evitar efectos secundarios |
-| `tests_preparados` | Tester añadió tests que fallan con los marcadores esperados | Resultado intermedio: ejecutar el implementador dependiente |
-| `tests_no_fallan` / `tests_rojos_sin_evidencia` | Los tests no fallan o el fallo no coincide con la evidencia declarada | Corregir el encargo tester antes de implementar |
-| `dependencia_fallida` / `dependencia_no_resuelta` | Un predecesor no fue aprobado o no se pudo resolver | No lanzar el dependiente; revisar la cadena |
-| `dependencia_nueva` / `posible_secreto` | Cambió dependencias o metió algo sensible | Descarta |
-| `presupuesto_agotado` | Alcanzó `presupuesto_tokens` | Conserva la entrega parcial y evalúa si corresponde ampliar el límite |
-| `presupuesto_no_verificable` | El stream no permite medir tokens de entrada | Se detiene por seguridad; verifica el formato JSONL y la versión de OpenCode |
-| `error_codex` | Codex CLI falló o una operación fue bloqueada por workspace-write | Revisar `opencode.err`; no se habilitan permisos más amplios automáticamente |
-| `error_antigravity` | Antigravity falló, devolvió JSON inválido o un estado no exitoso | Revisar `agy.err` y `agy.json`; no se amplían permisos automáticamente |
-| `timeout` / `error_opencode` | Cuota, proxy o modelo colgado | Revisa `opencode.err` |
-| `worktree_reutilizado_sucio` | El worktree conserva cambios sin commitear de una corrida anterior | Preserva o limpia explícitamente esos cambios antes de reintentar |
-| `tope_rondas` | Ya hubo 2 rondas del mismo encargo | Lo toma Claude |
+| **OpenCode** | Agente configurado en el encargo | Puede usar el aislamiento `bwrap` opcional, si está disponible. |
+| **Codex CLI** | `codex exec` no interactivo | El sandbox workspace-write limita escrituras y red; las pruebas disponibles observaron que aún puede leer `$HOME`. No usar con secretos. |
+| **Antigravity CLI** | `agy --print` con salida JSON y `--sandbox` | Requiere aceptar explícitamente el riesgo. `--sandbox` es *best-effort*; no equivale a aislamiento verificado del host. |
 
----
+Un **worktree no es un sandbox de seguridad**. Usar repositorios desechables y sin secretos al validar un motor nuevo. Una respuesta CLI correcta no prueba que el sandbox funcione. No ampliar permisos automáticamente si falla una ejecución.
 
-## Arquitectura
+## Resultados
 
-```
-Claude (director)                       despachar.py                      OpenCode (trabajador)
- │ escribe _encargos/<proy>/NNN.md ───▶ │ git worktree + rama opencode/…
- │                                      │ entornos compartidos solo con opt-in
- │                                      │ opencode run --agent <trabajador> ─▶ trabaja y commitea
- │                                      │ ◀──────── REPORTE.md + commits ─────┘
- │                                      │ oráculo antes/después · alcance · deps · secretos
- │ ◀──────────── estado.json ───────────┘
- ├─ pasa ────────▶ revisa diff, prueba de mutación, propone integrar
- ├─ ajustes ─────▶ nuevo encargo con feedback (máx. 2 rondas)
- └─ tope ────────▶ lo termina Claude
-```
+El despachador registra el estado y la evidencia en `runs/`. Los resultados pueden indicar éxito, fallo del oráculo, cambio fuera de alcance, violación de rutas inmutables, timeout o error del motor. Ante un fallo, revisar los logs y corregir el encargo; no integrar una entrega rechazada.
 
-### Trabajadores
+## Documentación
 
-Cada trabajador es un agente de OpenCode (`agents/*.md`) con su propio prompt y permisos de edición:
+- [Roadmap de endurecimiento y Antigravity](docs/ROADMAP_ENDURECIMIENTO_ANTIGRAVITY.md)
+- [Validación de Antigravity en el host](docs/VALIDACION_HOST_ANTIGRAVITY.md)
+- [Roadmap general](ROADMAP.md)
+- [Propuestas y antecedentes](docs/propuestas.md)
 
-| Agente | Función | Puede editar |
-|---|---|---|
-| `tester` | Escribe solo tests | `tests/**`, `REPORTE.md`, `docs/opencode/**` |
-| `implementador` | Una tarea acotada de código | Archivos permitidos del encargo |
-| `higiene` | Limpieza sin cambiar comportamiento (imports, código muerto, logging); exige baseline verde | Archivos permitidos del encargo |
-| `revisor` | Revisa el diff de la rama y reporta hallazgos `[ALTA/MEDIA/BAJA]` con evidencia | Nada (solo lectura; el despachador verifica que no tocó el worktree) |
+## Principios
 
----
-
-## Estructura del repositorio
-
-```
-orquestador-opencode/
-├── README.md
-├── despachar.py                 # despachador: un encargo → un veredicto
-├── cola.py                      # varios encargos en paralelo (2-3), sin pisarse
-├── mutacion.py                  # prueba de mutación para Python (AST, sin dependencias)
-├── uso.py                       # suma tokens reportados por eventos JSONL de OpenCode
-├── historial.py                 # ledger append-only y resumen por agente/resultado/proyecto
-├── visor.py / ver.py            # panel opcional en Herdr y su formateador en vivo
-├── instalar.sh                  # instala agentes y skill
-├── agents/                      # trabajadores de OpenCode
-├── skills/director-opencode/    # skill de Claude: el ciclo del director
-├── tests/                       # unittest del despachador
-├── schemas/estado.v1.schema.json # contrato mínimo versionado de estado.json
-└── runs/                        # logs y estado.json por corrida (ignorado por git)
-```
-
----
-
-## Lecciones de la primera práctica
-
-Probado el 2026-10-13 con un sandbox de análisis de mercado y el agente `tester`:
-
-1. **OpenCode desatendido rechaza leer fuera del worktree** y se detiene en silencio (`external_directory ... auto-rejecting`). Por eso el encargo va incrustado en el mensaje y la ruta del repo original se reescribe.
-2. **Un worktree no trae `.venv` ni `node_modules`** (están en `.gitignore`): por defecto no se enlazan, para no exponer al trabajador un entorno modificable compartido con el repo original. El opt-in `permitir_entornos_compartidos = true` restaura los symlinks y debe usarse solo cuando el riesgo esté aceptado.
-3. **`git status` colapsa carpetas nuevas** a `docs/`: se usa `-uall` para no dar falsos positivos de alcance.
-4. **No fiarse del "listo" ni de los "bugs encontrados".** El modelo gratuito afirmó asserts que contradecían su propia aritmética y los llamó bugs del código.
-5. **Prueba de mutación como compuerta de calidad:** tests verdes no bastan. Dos bordes de RSI sobrevivieron a la mutación hasta que el director los corrigió.
-
----
-
-6. **Los tests del propio orquestador necesitan casos de regresión reales.** Dos bugs míos pasaron los tests y aparecieron con trabajo real: `git()` hacía `strip()` y `' M archivo'` perdía la primera letra (`arket_analyzer.py` → falso `fuera_de_alcance`), y `herdr pane run` responde rc 0 con stdout vacío, lo que reventaba el parser del visor.
-7. **El revisor se calibró, no se asumió:** sobre una rama con defectos sembrados (cambio silencioso de producción, secreto, test sin asserts, assert contradictorio) detectó 4 de 4 con evidencia y 0 falsos positivos; sobre la rama buena respondió APTO. Omitió un import sin usar (baja).
-8. **Paralelismo real:** dos trabajadores a la vez tardaron 258 s en vez de ~440 s en serie. El candado por proyecto evita que dos `git worktree add` choquen, y el planificador serializa encargos que podrían tocar los mismos archivos.
-9. **Un trabajador contaminó la suite** reemplazando `sys.modules["rich"]` por un `MagicMock` a nivel de módulo; el oráculo (la suite completa) lo detectó y la ronda 2, con feedback concreto, lo corrigió.
-10. **Límite de la mutación:** con pocas funciones el universo es chico (4 mutantes en `guardar_reporte`) y el puntaje es grueso; sirve para encontrar bordes concretos, no como porcentaje de calidad.
-
----
-
-## Qué sigue
-
-El plan por fases, con criterio de aceptación para cada ítem, está en [`ROADMAP.md`](ROADMAP.md). El diseño y el origen de cada idea (rescatadas de proyectos similares) están en [`docs/propuestas.md`](docs/propuestas.md).
-
----
-
-## Calibre y límites
-
-Solo se delega trabajo de bajo calibre: sin secretos, sin dinero ni datos de terceros. Los modelos gratuitos pueden usar los prompts para entrenar. El trabajador nunca hace push a `main` ni merge, y el despachador verifica que `main` quedó intacto.
+- Encargos pequeños, explícitos y verificables.
+- Separación entre director, trabajador y verificador.
+- Límites de archivos y rutas inmutables.
+- El oráculo y el diff pesan más que la declaración del agente.
+- Sin push ni merge automático a `main`.
+- La decisión de integración es humana.
