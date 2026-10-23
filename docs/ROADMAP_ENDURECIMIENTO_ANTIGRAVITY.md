@@ -101,8 +101,8 @@ Estas ideas quedan registradas para evaluación futura, pero **no se incorporan 
 
 - [x] Rama de trabajo creada desde `main`.
 - [x] Roadmap publicado.
-- [ ] Fase 1.1: compuerta de revisión.
-- [ ] Fase 1.2: timeout y terminación de procesos.
+- [x] Fase 1.1: compuerta explícita de aceptación agregada; pruebas de contrato añadidas. Falta ejecutar CI y revisar resultados.
+- [x] Fase 1.2: timeout exterior y terminación de grupos ya estaban implementados en la base (\u0060cola.py\u0060, \u0060procesos.py\u0060, \u0060tests/test_cola.py\u0060); se verificó estáticamente y no se duplicará la lógica. Falta ejecutar CI de esta rama.
 - [ ] Fase 1.3: trazabilidad de base y worktree.
 - [ ] Fase 2: verificación e integración de Antigravity.
 - [ ] Fase 3: fallback acotado.
