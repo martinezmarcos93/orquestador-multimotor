@@ -95,11 +95,14 @@ class TestParseo(unittest.TestCase):
             d.parsear_encargo(con_presupuesto)
 
     def test_motor_antigravity_es_optativo_y_valida_opciones(self):
-        texto = ENCARGO.replace("+++\n# Encargo", 'motor = "antigravity"\nantigravity_model = "gemini-test"\nantigravity_effort = "high"\n+++\n# Encargo')
+        texto = ENCARGO.replace("+++\n# Encargo", 'motor = "antigravity"\nantigravity_accepts_host_risk = true\nantigravity_model = "gemini-test"\nantigravity_effort = "high"\n+++\n# Encargo')
         cfg = d.parsear_encargo(texto)
         self.assertEqual(cfg["motor"], "antigravity")
         self.assertEqual(cfg["antigravity_model"], "gemini-test")
         self.assertEqual(cfg["antigravity_effort"], "high")
+        sin_ack = ENCARGO.replace("+++\n# Encargo", 'motor = "antigravity"\n+++\n# Encargo')
+        with self.assertRaisesRegex(ValueError, "antigravity_accepts_host_risk"):
+            d.parsear_encargo(sin_ack)
         presupuesto = texto.replace("+++\n# Encargo", 'presupuesto_tokens = 100\n+++\n# Encargo')
         with self.assertRaisesRegex(ValueError, "no es compatible"):
             d.parsear_encargo(presupuesto)
