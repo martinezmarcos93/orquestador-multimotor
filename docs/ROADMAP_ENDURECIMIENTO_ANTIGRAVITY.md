@@ -103,6 +103,6 @@ Estas ideas quedan registradas para evaluación futura, pero **no se incorporan 
 - [x] Roadmap publicado.
 - [x] Fase 1.1: compuerta explícita de aceptación agregada; pruebas de contrato añadidas. Falta ejecutar CI y revisar resultados.
 - [x] Fase 1.2: timeout exterior y terminación de grupos ya estaban implementados en la base (\u0060cola.py\u0060, \u0060procesos.py\u0060, \u0060tests/test_cola.py\u0060); se verificó estáticamente y no se duplicará la lógica. Falta ejecutar CI de esta rama.
-- [ ] Fase 1.3: trazabilidad de base y worktree.
+- [x] Fase 1.3: la base ya registra SHA inicial/final, SHA inicial del worktree, valida ancestralidad y bloquea worktrees reutilizados sucios o divergentes; hay pruebas de regresión para base fijada. Se conserva esa lógica. La ampliación pendiente es comprobar su aceptación con CI y, si aparece un hueco, añadir pruebas específicas sin duplicar controles.
 - [ ] Fase 2: verificación e integración de Antigravity.
 - [ ] Fase 3: fallback acotado.
