@@ -1,6 +1,6 @@
 # Roadmap de endurecimiento y expansión de proveedores
 
-Estado: publicado en rama de trabajo; implementación incremental en curso. Antigravity tiene adaptador inicial y pruebas con fixtures; verificación con el CLI real aún pendiente.
+Estado: publicado en rama de trabajo; implementación incremental en curso. Antigravity tiene adaptador inicial y pruebas con fixtures; CI #454 aprobada; verificación con el CLI real aún pendiente.
 Rama: `feat/roadmap-hardening-antigravity`
 Base: `main`
 Última actualización: 2026-10-23
@@ -106,5 +106,5 @@ Estas ideas quedan registradas para evaluación futura, pero **no se incorporan 
 - [x] Fase 1.1: compuerta explícita de aceptación agregada; pruebas de contrato añadidas; CI de GitHub Actions #442 aprobada.
 - [x] Fase 1.2: timeout exterior y terminación de grupos ya estaban implementados en la base (\u0060cola.py\u0060, \u0060procesos.py\u0060, \u0060tests/test_cola.py\u0060); se verificó estáticamente y no se duplicará la lógica. Falta ejecutar CI de esta rama.
 - [x] Fase 1.3: la base ya registra SHA inicial/final, SHA inicial del worktree, valida ancestralidad y bloquea worktrees reutilizados sucios o divergentes; las pruebas de regresión existentes pasaron en CI #442. Se conserva esa lógica sin duplicar controles.
-- [ ] Fase 2: adaptador inicial, opciones de configuración y pruebas offline implementadas; pendiente CI de esta iteración y prueba real autenticada/aislamiento en el equipo anfitrión.
+- [ ] Fase 2: adaptador inicial, opciones de configuración y pruebas offline implementadas; CI #454 aprobada; pendiente prueba real autenticada/aislamiento y revisión de términos en el equipo anfitrión.
 - [ ] Fase 3: fallback acotado.
