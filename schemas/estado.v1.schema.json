@@ -61,6 +61,9 @@
     "base_ref": {
       "type": "string"
     },
+    "rama_observada": {
+      "type": "string"
+    },
     "base_sha": {
       "type": "string"
     },

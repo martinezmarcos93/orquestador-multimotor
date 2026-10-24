@@ -194,6 +194,69 @@ class TestMensaje(unittest.TestCase):
         self.assertNotIn("+++", m)
         self.assertNotIn("oraculo =", m)
 
+    def test_mensaje_de_todos_los_motores_incluye_oraculo_literal(self):
+        comandos = [".venv/bin/python -m pytest -q", "python3 -m unittest discover -s tests"]
+        for motor in ("opencode", "codex", "antigravity"):
+            cfg = d.parsear_encargo(ENCARGO)
+            cfg["motor"] = motor
+            cfg["oraculo"] = comandos
+            if motor == "antigravity":
+                cfg["agente"] = "tester"
+            mensaje = d.mensaje_para_trabajador(cfg, ENCARGO, Path("/tmp/wt"), Path("/tmp/repo"))
+            self.assertIn("Para verificar usá exactamente estos comandos (son el oráculo):", mensaje)
+            for comando in comandos:
+                self.assertIn(comando, mensaje)
+
+
+class TestReconciliarRama(unittest.TestCase):
+    def _git(self, cwd, *args):
+        import subprocess
+        subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+    def test_recupera_rama_esperada_si_es_ancestro_del_head_worker(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            wt = Path(tmp)
+            self._git(wt, "init", "-q", "-b", "base")
+            self._git(wt, "config", "user.name", "test")
+            self._git(wt, "config", "user.email", "test@example.invalid")
+            (wt / "a").write_text("base", encoding="utf-8")
+            self._git(wt, "add", "a")
+            self._git(wt, "commit", "-qm", "base")
+            base = d.git(wt, "rev-parse", "HEAD")
+            self._git(wt, "branch", "opencode/fecha-tema")
+            self._git(wt, "checkout", "-qb", "gui-saludo")
+            (wt / "a").write_text("worker", encoding="utf-8")
+            self._git(wt, "commit", "-qam", "worker")
+            head = d.git(wt, "rev-parse", "HEAD")
+            observada, recuperada = d.reconciliar_rama_worker(wt, "opencode/fecha-tema", base)
+            self.assertEqual(observada, "gui-saludo")
+            self.assertTrue(recuperada)
+            self.assertEqual(d.git(wt, "branch", "--show-current"), "opencode/fecha-tema")
+            self.assertEqual(d.git(wt, "rev-parse", "opencode/fecha-tema"), head)
+
+    def test_rechaza_rama_worker_que_no_desciende_de_la_base(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            wt = Path(tmp)
+            self._git(wt, "init", "-q", "-b", "base")
+            self._git(wt, "config", "user.name", "test")
+            self._git(wt, "config", "user.email", "test@example.invalid")
+            (wt / "a").write_text("base", encoding="utf-8")
+            self._git(wt, "add", "a")
+            self._git(wt, "commit", "-qm", "base")
+            self._git(wt, "branch", "opencode/fecha-tema")
+            self._git(wt, "checkout", "--orphan", "gui-saludo")
+            self._git(wt, "rm", "-rf", ".")
+            (wt / "b").write_text("otro", encoding="utf-8")
+            self._git(wt, "add", "b")
+            self._git(wt, "commit", "-qm", "independiente")
+            base = d.git(wt, "rev-parse", "opencode/fecha-tema")
+            observada, recuperada = d.reconciliar_rama_worker(wt, "opencode/fecha-tema", base)
+            self.assertEqual(observada, "gui-saludo")
+            self.assertFalse(recuperada)
+            self.assertEqual(d.git(wt, "branch", "--show-current"), "gui-saludo")
+
 
 class TestPrevisualizacionIntegracion(unittest.TestCase):
     def _git(self, repo, *args):

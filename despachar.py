@@ -824,10 +824,35 @@ def mensaje_para_antigravity(texto_encargo: str, wt: Path, repo: Path, agente: s
 
 def mensaje_para_trabajador(cfg: dict, texto_encargo: str, wt: Path, repo: Path) -> str:
     if cfg.get("motor", "opencode") == "codex":
-        return mensaje_para_codex(texto_encargo, wt, repo, cfg["agente"])
-    if cfg.get("motor") == "antigravity":
-        return mensaje_para_antigravity(texto_encargo, wt, repo, cfg["agente"])
-    return mensaje_para_opencode(texto_encargo, wt, repo)
+        mensaje = mensaje_para_codex(texto_encargo, wt, repo, cfg["agente"])
+    elif cfg.get("motor") == "antigravity":
+        mensaje = mensaje_para_antigravity(texto_encargo, wt, repo, cfg["agente"])
+    else:
+        mensaje = mensaje_para_opencode(texto_encargo, wt, repo)
+    comandos = "\n".join(cfg["oraculo"])
+    return (f"{mensaje}\n\nPara verificar usá exactamente estos comandos (son el oráculo):\n"
+            f"{comandos}")
+
+
+def reconciliar_rama_worker(wt: Path, rama_esperada: str, base_sha: str) -> tuple[str, bool]:
+    """Devuelve la rama observada y si se pudo recuperar la rama esperada de forma segura."""
+    observada = git(wt, "branch", "--show-current")
+    if observada == rama_esperada:
+        return observada, True
+    head = git(wt, "rev-parse", "HEAD")
+    base_es_ancestro_head = base_es_ancestro(base_sha, wt)
+    r = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", rama_esperada, head], cwd=wt,
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    if r.returncode not in (0, 1):
+        raise RuntimeError(f"no se pudo validar la rama esperada: {r.stderr.strip()}")
+    rama_es_ancestro_head = r.returncode == 0
+    if not (base_es_ancestro_head and rama_es_ancestro_head):
+        return observada, False
+    git(wt, "branch", "-f", rama_esperada, head)
+    git(wt, "checkout", rama_esperada)
+    return observada, True
 
 
 def ejecutar_codex_con_timeout(cmd: list[str], mensaje: str, *, cwd: Path, timeout_s: float,
@@ -1005,6 +1030,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         t0, timeout, rc = time.time(), False, 0
         presupuesto_agotado = False
         presupuesto_no_verificable = False
+        rama_cambiada_incompatible = False
         tokens_entrada_observados = None
         tokens_entrada_parcial = None
         resultado_antigravity = None
@@ -1111,6 +1137,15 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
             if tokens_entrada_observados is None:
                 tokens_entrada_observados = estado["uso"].get("entrada")
 
+        if not reevaluar:
+            rama_observada, rama_recuperada = reconciliar_rama_worker(wt, rama, sha_base_main)
+            if rama_observada != rama:
+                estado["rama_observada"] = rama_observada
+                aviso_rama = f"El worker cambió de rama: esperada {rama}, observada {rama_observada}."
+                estado.setdefault("advertencias", []).append(aviso_rama)
+                logger.warning(aviso_rama)
+                rama_cambiada_incompatible = not rama_recuperada
+
         if cfg["motor"] == "codex" and rc == 0 and not timeout:
             if commitear_pendientes(wt, cfg):
                 etapa(run, "commit del despachador (el sandbox de Codex no escribe el gitdir)")
@@ -1195,6 +1230,9 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         if (cfg["motor"] == "antigravity" and not timeout and resultado_antigravity
                 and not resultado_antigravity.get("ok")):
             estado["resultado"] = "error_antigravity"
+        if rama_cambiada_incompatible:
+            estado["resultado"] = "fuera_de_alcance"
+            estado["motivo"] = "rama cambiada"
         if cfg.get("espera_rojo"):
             texto_oraculo_despues = ""
             if log_oraculo.exists() and "offset_oraculo_despues" in locals():
