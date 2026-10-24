@@ -1077,6 +1077,42 @@ class TestVeredicto(unittest.TestCase):
         self.assertEqual(self.v(timeout=True), "timeout")
 
 
+class TestAjustarResultadoPorMotor(unittest.TestCase):
+    def ajustar(self, resultado="pasa", **kw):
+        base = dict(motor="opencode", rc=0, timeout=False, commits=1, sucios=[],
+                    resultado_antigravity=None, opencode_sin_respuesta=False,
+                    rama_cambiada_incompatible=False)
+        return d.ajustar_resultado_por_motor(resultado, **{**base, **kw})
+
+    def test_opencode_sin_respuesta(self):
+        self.assertEqual(self.ajustar(commits=0, opencode_sin_respuesta=True),
+                         ("motor_sin_respuesta", None))
+
+    def test_codex_mapea_error_opencode(self):
+        self.assertEqual(self.ajustar("error_opencode", motor="codex"), ("error_codex", None))
+
+    def test_antigravity_denegado(self):
+        agy = {"ok": False, "status": "SUCCESS", "motivo": "permisos_denegados",
+               "denied_actions": [{"action": "command"}]}
+        self.assertEqual(self.ajustar(motor="antigravity", resultado_antigravity=agy),
+                         ("motor_sin_respuesta", "permisos_denegados"))
+
+    def test_antigravity_invalido(self):
+        agy = {"ok": False, "status": "INVALID_OUTPUT", "error": "respuesta vacía"}
+        self.assertEqual(self.ajustar(motor="antigravity", resultado_antigravity=agy),
+                         ("error_antigravity", None))
+
+    def test_antigravity_timeout(self):
+        agy = {"ok": False, "status": "TIMEOUT", "error": "timeout"}
+        self.assertEqual(self.ajustar("timeout", motor="antigravity", timeout=True,
+                                      resultado_antigravity=agy), ("timeout", None))
+
+    def test_rama_cambiada_tiene_prioridad(self):
+        agy = {"ok": False, "motivo": "permisos_denegados"}
+        self.assertEqual(self.ajustar(motor="antigravity", resultado_antigravity=agy,
+                                      rama_cambiada_incompatible=True),
+                         ("fuera_de_alcance", "rama cambiada"))
+
 class TestContadorRondas(unittest.TestCase):
     def test_motor_sin_respuesta_no_consume_tope(self):
         self.assertIn("motor_sin_respuesta", d.RESULTADOS_NO_CUENTAN_PARA_TOPE)
@@ -1324,6 +1360,12 @@ class TestOraculoTimeout(unittest.TestCase):
 
 
 class TestEstadoVersionado(unittest.TestCase):
+    def test_permisos_denegados_indican_siguiente_accion(self):
+        estado = d.normalizar_estado({"resultado": "motor_sin_respuesta",
+                                      "motivo": "permisos_denegados"},
+                                     "2026-10-14T00:00:00+00:00")
+        self.assertIn("reasignar a otro motor", estado["siguiente_accion"])
+
     def test_normaliza_estado_con_accion_y_timestamps_utc(self):
         estado = d.normalizar_estado({"resultado": "baseline_rojo"}, "2026-10-14T00:00:00+00:00")
         self.assertEqual(estado["schema_version"], 1)

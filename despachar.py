@@ -393,6 +393,28 @@ def opencode_sin_respuesta(path: Path) -> bool:
     return True
 
 
+def ajustar_resultado_por_motor(resultado: str, *, motor: str, rc: int, timeout: bool,
+                                commits: int, sucios: list[str], resultado_antigravity: dict | None,
+                                opencode_sin_respuesta: bool,
+                                rama_cambiada_incompatible: bool) -> tuple[str, str | None]:
+    """Aplica los ajustes finales específicos del motor y devuelve resultado y motivo."""
+    motivo = None
+    if motor == "opencode" and rc == 0 and commits == 0 and not sucios and opencode_sin_respuesta:
+        resultado = "motor_sin_respuesta"
+    if motor == "antigravity" and resultado_antigravity and resultado_antigravity.get("motivo") == "permisos_denegados":
+        resultado = "motor_sin_respuesta"
+        motivo = "permisos_denegados"
+    if motor == "codex" and resultado == "error_opencode":
+        resultado = "error_codex"
+    if (motor == "antigravity" and not timeout and resultado_antigravity
+            and not resultado_antigravity.get("ok") and not resultado_antigravity.get("denied_actions")):
+        resultado = "error_antigravity"
+    if rama_cambiada_incompatible:
+        resultado = "fuera_de_alcance"
+        motivo = "rama cambiada"
+    return resultado, motivo
+
+
 def clasificar_resultado_test_first(resultado: str, rc_opencode: int, archivos: list[str],
                                    salida_oraculo: str, marcadores: list[str]) -> tuple[str, str | None]:
     """Acepta tests deliberadamente rojos solo si el fallo contiene evidencia declarada."""
@@ -1268,20 +1290,15 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                                         ),
                                         ignorados_sin_commitear=cfg.get("ignorados_sin_commitear", [])),
         )
-        if (cfg["motor"] == "opencode" and rc == 0 and commits == 0 and not sucios
-                and opencode_sin_respuesta(run / "opencode.jsonl")):
-            estado["resultado"] = "motor_sin_respuesta"
-        if cfg["motor"] == "antigravity" and agy_denied_actions:
-            estado["resultado"] = "motor_sin_respuesta"
-            estado["motivo"] = "permisos_denegados"
-        if cfg["motor"] == "codex" and estado["resultado"] == "error_opencode":
-            estado["resultado"] = "error_codex"
-        if (cfg["motor"] == "antigravity" and not timeout and resultado_antigravity
-                and not resultado_antigravity.get("ok")):
-            estado["resultado"] = "error_antigravity"
-        if rama_cambiada_incompatible:
-            estado["resultado"] = "fuera_de_alcance"
-            estado["motivo"] = "rama cambiada"
+        estado["resultado"], motivo_motor = ajustar_resultado_por_motor(
+            estado["resultado"], motor=cfg["motor"], rc=rc, timeout=timeout,
+            commits=commits, sucios=sucios, resultado_antigravity=resultado_antigravity,
+            opencode_sin_respuesta=(opencode_sin_respuesta(run / "opencode.jsonl")
+                                    if cfg["motor"] == "opencode" else False),
+            rama_cambiada_incompatible=rama_cambiada_incompatible,
+        )
+        if motivo_motor:
+            estado["motivo"] = motivo_motor
         if cfg.get("espera_rojo"):
             texto_oraculo_despues = ""
             if log_oraculo.exists() and "offset_oraculo_despues" in locals():
