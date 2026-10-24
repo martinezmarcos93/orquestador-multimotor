@@ -1163,6 +1163,14 @@ class TestEstadoVersionado(unittest.TestCase):
         estado.pop("ronda")
         self.assertEqual(d.validar_estado_v1(estado), [])
 
+    def test_estado_de_los_tres_motores_es_valido(self):
+        # Regresión 23/10/2026: el enum de `motor` no incluía antigravity y todo
+        # veredicto de Antigravity terminaba en error_estado_invalido.
+        for motor in ("opencode", "codex", "antigravity"):
+            estado = d.normalizar_estado({"resultado": "pasa", "motor": motor},
+                                         "2026-10-14T00:00:00+00:00")
+            self.assertEqual(d.validar_estado_v1(estado), [], motor)
+
     def test_schema_documenta_contrato_minimo_versionado(self):
         import json
         schema_path = Path(d.__file__).resolve().parent / "schemas" / "estado.v1.schema.json"

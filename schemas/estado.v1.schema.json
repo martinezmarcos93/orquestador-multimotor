@@ -487,7 +487,8 @@
       "type": "string",
       "enum": [
         "opencode",
-        "codex"
+        "codex",
+        "antigravity"
       ]
     },
     "sandbox": {
