@@ -333,7 +333,8 @@ def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: 
                       presupuesto_agotado: bool = False, presupuesto_no_verificable: bool = False,
                       puntaje_mutacion: float | None = None, umbral_mutacion: float = 0.0,
                       error_mutacion: bool = False, sin_candidatos_mutacion: bool = False,
-                      ignorados_sin_commitear: list[str] | None = None) -> str:
+                      ignorados_sin_commitear: list[str] | None = None,
+                      motor_sin_respuesta: bool = False) -> str:
     """Veredicto único; el orden es el de gravedad."""
     if secretos:
         return "posible_secreto"
@@ -352,6 +353,8 @@ def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: 
     if ignorados_sin_commitear:
         return "trabajo_sin_commitear"
     if commits == 0 and not sucios:
+        if motor_sin_respuesta and rc_opencode == 0:
+            return "motor_sin_respuesta"
         return "sin_cambios" if rc_opencode == 0 else "error_opencode"
     if sucios:
         return "trabajo_sin_commitear"
@@ -364,6 +367,30 @@ def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: 
     if puntaje_mutacion is not None and puntaje_mutacion < umbral_mutacion:
         return "tests_debiles"
     return "pasa"
+
+
+def opencode_sin_respuesta(path: Path) -> bool:
+    """True si el JSONL no contiene texto del modelo ni herramientas aparte de skill."""
+    import json
+    try:
+        lineas = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+    for linea in lineas:
+        try:
+            evento = json.loads(linea)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(evento, dict):
+            continue
+        parte = evento.get("part") if isinstance(evento.get("part"), dict) else {}
+        if parte.get("type") == "text" and str(parte.get("text", "")).strip():
+            return False
+        if evento.get("type") in ("tool", "tool-call", "tool_use") or parte.get("type") in ("tool", "tool-call", "tool_use"):
+            herramienta = str(parte.get("tool") or parte.get("name") or evento.get("tool") or "").lower()
+            if herramienta != "skill" and not herramienta.startswith("skill."):
+                return False
+    return True
 
 
 def clasificar_resultado_test_first(resultado: str, rc_opencode: int, archivos: list[str],
@@ -1034,6 +1061,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         tokens_entrada_observados = None
         tokens_entrada_parcial = None
         resultado_antigravity = None
+        agy_denied_actions = []
         if reevaluar:
             etapa(run, "reevaluación: no se vuelve a lanzar OpenCode (ni se gasta cuota ni una ronda)")
         else:
@@ -1082,6 +1110,9 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                 resultado_antigravity = antigravity_cli.interpretar_resultado(salida_agy, rc, timeout)
                 estado["antigravity_status"] = resultado_antigravity.get("status")
                 estado["antigravity_conversation_id"] = resultado_antigravity.get("conversation_id")
+                agy_denied_actions = resultado_antigravity.get("denied_actions", [])
+                if agy_denied_actions:
+                    estado["acciones_denegadas"] = agy_denied_actions
                 if resultado_antigravity.get("error"):
                     estado["error_antigravity"] = resultado_antigravity["error"]
                     rc = -1
@@ -1225,6 +1256,12 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                                         ),
                                         ignorados_sin_commitear=cfg.get("ignorados_sin_commitear", [])),
         )
+        if (cfg["motor"] == "opencode" and rc == 0 and commits == 0 and not sucios
+                and opencode_sin_respuesta(run / "opencode.jsonl")):
+            estado["resultado"] = "motor_sin_respuesta"
+        if cfg["motor"] == "antigravity" and agy_denied_actions:
+            estado["resultado"] = "motor_sin_respuesta"
+            estado["motivo"] = "permisos_denegados"
         if cfg["motor"] == "codex" and estado["resultado"] == "error_opencode":
             estado["resultado"] = "error_codex"
         if (cfg["motor"] == "antigravity" and not timeout and resultado_antigravity
@@ -1301,6 +1338,7 @@ def crear_visor(pedido: bool):
 ACCIONES_SIGUIENTES = {
     "pasa": "Revisar diff, reporte y evidencia antes de integrar manualmente.",
     "sin_cambios": "Confirmar si el encargo ya estaba satisfecho o si faltó trabajo.",
+    "motor_sin_respuesta": "Reintentar la ejecución.",
     "error_opencode": "Inspeccionar opencode.err y el estado del worktree antes de reintentar.",
     "error_codex": "Inspeccionar opencode.err y el estado del worktree; Codex no recibió permisos interactivos y pudo ser bloqueado por workspace-write.",
     "error_antigravity": "Inspeccionar agy.err y agy.json; verificar autenticación, versión, estado de la respuesta y disponibilidad real del sandbox.",
@@ -1352,6 +1390,8 @@ def normalizar_estado(estado: dict, inicio_utc: str) -> dict:
         estado["siguiente_accion"] = "Revisar el diagnóstico de integracion_previa; no asumir que la integración es limpia."
     elif aprobacion not in ("no_requerida", "aprobado") and resultado in ("pasa", "revision_manual"):
         estado["siguiente_accion"] = "Resolver el bloqueo del revisor antes de integrar; consultar el detalle de revision."
+    elif resultado == "motor_sin_respuesta" and estado.get("motivo") == "permisos_denegados":
+        estado["siguiente_accion"] = "Antigravity no tiene permisos para esta tarea: reasignar a otro motor o revisar permissions.allow."
     else:
         estado["siguiente_accion"] = ACCIONES_SIGUIENTES.get(
             resultado, "Inspeccionar estado.json y los logs asociados antes de continuar."

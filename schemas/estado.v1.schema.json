@@ -36,6 +36,13 @@
       "type": "array",
       "items": { "type": "string" }
     },
+    "acciones_denegadas": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "motivo": {
+      "type": "string"
+    },
     "id": {
       "type": "string"
     },

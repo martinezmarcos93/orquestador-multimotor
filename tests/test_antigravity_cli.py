@@ -39,6 +39,16 @@ class TestComandoAntigravity(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["status"], "ERROR")
 
+    def test_denied_actions_se_clasifica_como_motor_sin_respuesta(self):
+        result = interpretar_resultado(json.dumps({
+            "status": "SUCCESS", "response": "", "denied_actions": [
+                {"action": "write_file", "display_name": "EditFile"}
+            ]
+        }), 0)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["motivo"], "permisos_denegados")
+        self.assertEqual(result["denied_actions"][0]["action"], "write_file")
+
     def test_json_malformado_vacio_o_no_objeto_se_rechaza(self):
         for value in ("", "not-json", "[]", "null"):
             with self.subTest(value=value):

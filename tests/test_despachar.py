@@ -1016,6 +1016,25 @@ class TestVeredicto(unittest.TestCase):
         self.assertEqual(self.v(commits=0), "sin_cambios")
         self.assertEqual(self.v(commits=0, rc_opencode=1), "error_opencode")
 
+    def test_jsonl_solo_skill_sin_respuesta_es_motor_sin_respuesta(self):
+        import tempfile
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "opencode.jsonl"
+            ruta.write_text(json.dumps({"type": "tool", "part": {"type": "tool", "tool": "skill", "state": {"status": "completed"}}}) + "\n"
+                             + json.dumps({"type": "step-finish", "part": {"type": "step-finish", "tokens": {"output": 0}}}), encoding="utf-8")
+            self.assertTrue(d.opencode_sin_respuesta(ruta))
+            self.assertEqual(self.v(commits=0, motor_sin_respuesta=d.opencode_sin_respuesta(ruta)), "motor_sin_respuesta")
+
+    def test_jsonl_con_texto_sin_cambios_sigue_siendo_sin_cambios(self):
+        import tempfile
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "opencode.jsonl"
+            ruta.write_text(json.dumps({"type": "text", "part": {"type": "text", "text": "No hace falta cambiar nada."}}), encoding="utf-8")
+            self.assertFalse(d.opencode_sin_respuesta(ruta))
+            self.assertEqual(self.v(commits=0, motor_sin_respuesta=d.opencode_sin_respuesta(ruta)), "sin_cambios")
+
     def test_sin_commitear(self):
         self.assertEqual(self.v(sucios=["a.py"]), "trabajo_sin_commitear")
 
@@ -1046,6 +1065,9 @@ class TestVeredicto(unittest.TestCase):
 
 
 class TestContadorRondas(unittest.TestCase):
+    def test_motor_sin_respuesta_no_consume_tope(self):
+        self.assertIn("motor_sin_respuesta", d.RESULTADOS_NO_CUENTAN_PARA_TOPE)
+
     def test_dry_run_y_base_divergente_no_consumen_tope_antes_de_dos_rondas_reales(self):
         import json, tempfile
         with tempfile.TemporaryDirectory() as tmp:
