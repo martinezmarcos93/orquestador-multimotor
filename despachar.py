@@ -442,13 +442,25 @@ def listar_sucios(wt: Path) -> list[str]:
     return [l[3:] for l in r.stdout.splitlines() if l]
 
 
+ARTEFACTOS_REGENERABLES_IGNORADOS = frozenset({
+    "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "node_modules", ".venv", "venv",
+})
+
+
+def es_artefacto_regenerable(ruta: str) -> bool:
+    partes = Path(ruta).parts
+    return (any(parte in ARTEFACTOS_REGENERABLES_IGNORADOS or parte.endswith(".egg-info") for parte in partes)
+            or ruta.endswith((".pyc", ".pyo")))
+
+
 def listar_ignorados(wt: Path) -> list[str]:
     """Lista archivos ignorados individuales sin incluir directorios compactados."""
     r = subprocess.run(["git", "status", "--ignored", "--porcelain", "-uall"], cwd=wt,
                        capture_output=True, text=True, encoding="utf-8")
     if r.returncode != 0:
         raise RuntimeError(f"git status --ignored falló: {r.stderr.strip()}")
-    return [l[3:] for l in r.stdout.splitlines() if l.startswith("!! ")]
+    return [l[3:] for l in r.stdout.splitlines()
+            if l.startswith("!! ") and not es_artefacto_regenerable(l[3:])]
 
 
 def commitear_pendientes(wt: Path, cfg: dict) -> bool:

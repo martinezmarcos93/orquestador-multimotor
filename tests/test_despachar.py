@@ -56,6 +56,19 @@ class TestCommitIgnorados(unittest.TestCase):
                          ignorados_sin_commitear=cfg["ignorados_sin_commitear"]), "trabajo_sin_commitear")
         self.assertEqual(d.git(self.repo, "diff", "--cached", "--name-only"), "")
 
+    def test_artefactos_regenerables_se_ignoran_y_documento_exacto_se_fuerza(self):
+        (self.repo / ".gitignore").write_text("docs/\n__pycache__/\n", encoding="utf-8")
+        (self.repo / "tests" / "__pycache__").mkdir(parents=True)
+        (self.repo / "tests" / "__pycache__" / "x.pyc").write_bytes(b"cache")
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "nota.md").write_text("nota\n", encoding="utf-8")
+        cfg = {"id": "1", "tema": "demo", "permitidos": ["tests/**", "docs/nota.md"]}
+        self.assertTrue(d.commitear_pendientes(self.repo, cfg))
+        tracked = d.git(self.repo, "show", "--pretty=", "--name-only", "HEAD").splitlines()
+        self.assertIn("docs/nota.md", tracked)
+        self.assertNotIn("tests/__pycache__/x.pyc", tracked)
+        self.assertEqual(cfg["ignorados_sin_commitear"], [])
+
 
 class TestParseo(unittest.TestCase):
     def test_parsea_y_aplica_defaults(self):
