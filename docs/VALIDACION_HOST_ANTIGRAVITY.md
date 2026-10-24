@@ -54,3 +54,11 @@ No incluir tokens, cookies, contenido privado de prompts, rutas personales innec
 ## Criterio de salida
 
 La fase de validación anfitriona solo se considera aprobada cuando la autenticación y el contrato de salida se verifican en la instalación real, y el nivel de aislamiento requerido queda demostrado o se decide explícitamente no depender de él. Hasta entonces, Antigravity permanece optativo y no debe usarse como fallback automático.
+
+## Resultado de la validación en el host (23/10/2026)
+
+- Pasos 1-3: **aprobados** (`agy` 1.4.5, autenticación correcta, contrato JSON verificado).
+- Paso 4 (sandbox): **no verificado**.
+- Paso 5 (adaptador con encargos reales): **fallido**. En modo `--print`, `agy` deniega automáticamente las herramientas `command` y `write_file` si no hay reglas en `permissions.allow` de `~/.gemini/antigravity-cli/settings.json`, y aun así devuelve `status: SUCCESS` con `response` vacío.
+
+**Decisión vigente:** Antigravity queda **deshabilitado para encargos que escriben archivos** hasta que Marcos decida si configura reglas de permiso acotadas (afectan a todo el host). Detalle, consumo observado y opciones en [evidencia/2026-10-23-antigravity-y-tanda-hanna.md](evidencia/2026-10-23-antigravity-y-tanda-hanna.md).

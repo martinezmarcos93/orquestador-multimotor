@@ -81,7 +81,7 @@ En el encargo se selecciona el motor con `motor = "opencode"`, `motor = "codex"`
 |---|---|---|
 | **OpenCode** | Agente configurado en el encargo | Puede usar el aislamiento `bwrap` opcional, si está disponible. |
 | **Codex CLI** | `codex exec` no interactivo | El sandbox workspace-write limita escrituras y red; las pruebas disponibles observaron que aún puede leer `$HOME`. No usar con secretos. |
-| **Antigravity CLI** | `agy --print` con salida JSON y `--sandbox` | Requiere aceptar explícitamente el riesgo. `--sandbox` es *best-effort*; no equivale a aislamiento verificado del host. |
+| **Antigravity CLI** | `agy --print` con salida JSON y `--sandbox` | Requiere aceptar explícitamente el riesgo. `--sandbox` es *best-effort*; no equivale a aislamiento verificado del host. **Hoy no puede editar archivos ni ejecutar comandos en modo desatendido** sin reglas `permissions.allow` en el host ([evidencia 23/10/2026](docs/evidencia/2026-10-23-antigravity-y-tanda-hanna.md)). |
 
 Un **worktree no es un sandbox de seguridad**. Usar repositorios desechables y sin secretos al validar un motor nuevo. Una respuesta CLI correcta no prueba que el sandbox funcione. No ampliar permisos automáticamente si falla una ejecución.
 
