@@ -32,6 +32,17 @@
       "type": "string",
       "minLength": 1
     },
+    "ignorados_sin_commitear": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "acciones_denegadas": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "motivo": {
+      "type": "string"
+    },
     "id": {
       "type": "string"
     },
@@ -45,6 +56,9 @@
       "type": "integer",
       "minimum": 1
     },
+    "cuenta_para_tope": {
+      "type": "boolean"
+    },
     "run": {
       "type": "string"
     },
@@ -52,6 +66,9 @@
       "type": "string"
     },
     "base_ref": {
+      "type": "string"
+    },
+    "rama_observada": {
       "type": "string"
     },
     "base_sha": {

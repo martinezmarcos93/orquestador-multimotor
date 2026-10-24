@@ -1,4 +1,6 @@
 import sys
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,6 +18,56 @@ oraculo = ["pytest -q"]
 +++
 # Encargo 001
 '''
+
+
+class TestCommitIgnorados(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+        (self.repo / ".gitignore").write_text("docs/\n", encoding="utf-8")
+        (self.repo / "base.txt").write_text("base\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-f", ".gitignore", "base.txt"], cwd=self.repo, check=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@localhost", "commit", "-qm", "base"],
+                       cwd=self.repo, check=True)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_ruta_exacta_ignorada_se_commitea_y_afuera_no(self):
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "decision.md").write_text("ok\n", encoding="utf-8")
+        (self.repo / "docs" / "fuera.md").write_text("no\n", encoding="utf-8")
+        cfg = {"id": "1", "tema": "demo", "permitidos": ["docs/decision.md"]}
+        self.assertTrue(d.commitear_pendientes(self.repo, cfg))
+        tracked = d.git(self.repo, "show", "--pretty=", "--name-only", "HEAD").splitlines()
+        self.assertIn("docs/decision.md", tracked)
+        self.assertNotIn("docs/fuera.md", tracked)
+        self.assertEqual(cfg["ignorados_sin_commitear"], [])
+
+    def test_patron_comodin_no_fuerza_add_y_se_reporta(self):
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "decision.md").write_text("ok\n", encoding="utf-8")
+        cfg = {"id": "1", "tema": "demo", "permitidos": ["docs/**"]}
+        self.assertFalse(d.commitear_pendientes(self.repo, cfg))
+        self.assertEqual(cfg["ignorados_sin_commitear"], ["docs/decision.md"])
+        self.assertEqual(d.decidir_resultado(timeout=False, rc_opencode=0, commits=0, sucios=[],
+                         fuera=[], oraculo_ok=True, dependencias=[], secretos=False,
+                         ignorados_sin_commitear=cfg["ignorados_sin_commitear"]), "trabajo_sin_commitear")
+        self.assertEqual(d.git(self.repo, "diff", "--cached", "--name-only"), "")
+
+    def test_artefactos_regenerables_se_ignoran_y_documento_exacto_se_fuerza(self):
+        (self.repo / ".gitignore").write_text("docs/\n__pycache__/\n", encoding="utf-8")
+        (self.repo / "tests" / "__pycache__").mkdir(parents=True)
+        (self.repo / "tests" / "__pycache__" / "x.pyc").write_bytes(b"cache")
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "nota.md").write_text("nota\n", encoding="utf-8")
+        cfg = {"id": "1", "tema": "demo", "permitidos": ["tests/**", "docs/nota.md"]}
+        self.assertTrue(d.commitear_pendientes(self.repo, cfg))
+        tracked = d.git(self.repo, "show", "--pretty=", "--name-only", "HEAD").splitlines()
+        self.assertIn("docs/nota.md", tracked)
+        self.assertNotIn("tests/__pycache__/x.pyc", tracked)
+        self.assertEqual(cfg["ignorados_sin_commitear"], [])
 
 
 class TestParseo(unittest.TestCase):
@@ -154,6 +206,69 @@ class TestMensaje(unittest.TestCase):
         self.assertIn("# Encargo 001", m)
         self.assertNotIn("+++", m)
         self.assertNotIn("oraculo =", m)
+
+    def test_mensaje_de_todos_los_motores_incluye_oraculo_literal(self):
+        comandos = [".venv/bin/python -m pytest -q", "python3 -m unittest discover -s tests"]
+        for motor in ("opencode", "codex", "antigravity"):
+            cfg = d.parsear_encargo(ENCARGO)
+            cfg["motor"] = motor
+            cfg["oraculo"] = comandos
+            if motor == "antigravity":
+                cfg["agente"] = "tester"
+            mensaje = d.mensaje_para_trabajador(cfg, ENCARGO, Path("/tmp/wt"), Path("/tmp/repo"))
+            self.assertIn("Para verificar usá exactamente estos comandos (son el oráculo):", mensaje)
+            for comando in comandos:
+                self.assertIn(comando, mensaje)
+
+
+class TestReconciliarRama(unittest.TestCase):
+    def _git(self, cwd, *args):
+        import subprocess
+        subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+    def test_recupera_rama_esperada_si_es_ancestro_del_head_worker(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            wt = Path(tmp)
+            self._git(wt, "init", "-q", "-b", "base")
+            self._git(wt, "config", "user.name", "test")
+            self._git(wt, "config", "user.email", "test@example.invalid")
+            (wt / "a").write_text("base", encoding="utf-8")
+            self._git(wt, "add", "a")
+            self._git(wt, "commit", "-qm", "base")
+            base = d.git(wt, "rev-parse", "HEAD")
+            self._git(wt, "branch", "opencode/fecha-tema")
+            self._git(wt, "checkout", "-qb", "gui-saludo")
+            (wt / "a").write_text("worker", encoding="utf-8")
+            self._git(wt, "commit", "-qam", "worker")
+            head = d.git(wt, "rev-parse", "HEAD")
+            observada, recuperada = d.reconciliar_rama_worker(wt, "opencode/fecha-tema", base)
+            self.assertEqual(observada, "gui-saludo")
+            self.assertTrue(recuperada)
+            self.assertEqual(d.git(wt, "branch", "--show-current"), "opencode/fecha-tema")
+            self.assertEqual(d.git(wt, "rev-parse", "opencode/fecha-tema"), head)
+
+    def test_rechaza_rama_worker_que_no_desciende_de_la_base(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            wt = Path(tmp)
+            self._git(wt, "init", "-q", "-b", "base")
+            self._git(wt, "config", "user.name", "test")
+            self._git(wt, "config", "user.email", "test@example.invalid")
+            (wt / "a").write_text("base", encoding="utf-8")
+            self._git(wt, "add", "a")
+            self._git(wt, "commit", "-qm", "base")
+            self._git(wt, "branch", "opencode/fecha-tema")
+            self._git(wt, "checkout", "--orphan", "gui-saludo")
+            self._git(wt, "rm", "-rf", ".")
+            (wt / "b").write_text("otro", encoding="utf-8")
+            self._git(wt, "add", "b")
+            self._git(wt, "commit", "-qm", "independiente")
+            base = d.git(wt, "rev-parse", "opencode/fecha-tema")
+            observada, recuperada = d.reconciliar_rama_worker(wt, "opencode/fecha-tema", base)
+            self.assertEqual(observada, "gui-saludo")
+            self.assertFalse(recuperada)
+            self.assertEqual(d.git(wt, "branch", "--show-current"), "gui-saludo")
 
 
 class TestPrevisualizacionIntegracion(unittest.TestCase):
@@ -914,6 +1029,25 @@ class TestVeredicto(unittest.TestCase):
         self.assertEqual(self.v(commits=0), "sin_cambios")
         self.assertEqual(self.v(commits=0, rc_opencode=1), "error_opencode")
 
+    def test_jsonl_solo_skill_sin_respuesta_es_motor_sin_respuesta(self):
+        import tempfile
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "opencode.jsonl"
+            ruta.write_text(json.dumps({"type": "tool", "part": {"type": "tool", "tool": "skill", "state": {"status": "completed"}}}) + "\n"
+                             + json.dumps({"type": "step-finish", "part": {"type": "step-finish", "tokens": {"output": 0}}}), encoding="utf-8")
+            self.assertTrue(d.opencode_sin_respuesta(ruta))
+            self.assertEqual(self.v(commits=0, motor_sin_respuesta=d.opencode_sin_respuesta(ruta)), "motor_sin_respuesta")
+
+    def test_jsonl_con_texto_sin_cambios_sigue_siendo_sin_cambios(self):
+        import tempfile
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "opencode.jsonl"
+            ruta.write_text(json.dumps({"type": "text", "part": {"type": "text", "text": "No hace falta cambiar nada."}}), encoding="utf-8")
+            self.assertFalse(d.opencode_sin_respuesta(ruta))
+            self.assertEqual(self.v(commits=0, motor_sin_respuesta=d.opencode_sin_respuesta(ruta)), "sin_cambios")
+
     def test_sin_commitear(self):
         self.assertEqual(self.v(sucios=["a.py"]), "trabajo_sin_commitear")
 
@@ -943,7 +1077,103 @@ class TestVeredicto(unittest.TestCase):
         self.assertEqual(self.v(timeout=True), "timeout")
 
 
+class TestAjustarResultadoPorMotor(unittest.TestCase):
+    def ajustar(self, resultado="pasa", **kw):
+        base = dict(motor="opencode", rc=0, timeout=False, commits=1, sucios=[],
+                    resultado_antigravity=None, opencode_sin_respuesta=False,
+                    rama_cambiada_incompatible=False)
+        return d.ajustar_resultado_por_motor(resultado, **{**base, **kw})
 
+    def test_opencode_sin_respuesta(self):
+        self.assertEqual(self.ajustar(commits=0, opencode_sin_respuesta=True),
+                         ("motor_sin_respuesta", None))
+
+    def test_codex_mapea_error_opencode(self):
+        self.assertEqual(self.ajustar("error_opencode", motor="codex"), ("error_codex", None))
+
+    def test_antigravity_denegado(self):
+        agy = {"ok": False, "status": "SUCCESS", "motivo": "permisos_denegados",
+               "denied_actions": [{"action": "command"}]}
+        self.assertEqual(self.ajustar(motor="antigravity", resultado_antigravity=agy),
+                         ("motor_sin_respuesta", "permisos_denegados"))
+
+    def test_antigravity_invalido(self):
+        agy = {"ok": False, "status": "INVALID_OUTPUT", "error": "respuesta vacía"}
+        self.assertEqual(self.ajustar(motor="antigravity", resultado_antigravity=agy),
+                         ("error_antigravity", None))
+
+    def test_antigravity_timeout(self):
+        agy = {"ok": False, "status": "TIMEOUT", "error": "timeout"}
+        self.assertEqual(self.ajustar("timeout", motor="antigravity", timeout=True,
+                                      resultado_antigravity=agy), ("timeout", None))
+
+    def test_rama_cambiada_tiene_prioridad(self):
+        agy = {"ok": False, "motivo": "permisos_denegados"}
+        self.assertEqual(self.ajustar(motor="antigravity", resultado_antigravity=agy,
+                                      rama_cambiada_incompatible=True),
+                         ("fuera_de_alcance", "rama cambiada"))
+
+class TestContadorRondas(unittest.TestCase):
+    def test_motor_sin_respuesta_no_consume_tope(self):
+        self.assertIn("motor_sin_respuesta", d.RESULTADOS_NO_CUENTAN_PARA_TOPE)
+
+    def test_dry_run_y_base_divergente_no_consumen_tope_antes_de_dos_rondas_reales(self):
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "demo-001"
+            base.mkdir()
+            for n, resultado in enumerate(("dry_run", "pasa", "pasa"), 1):
+                run = base / f"ronda-{n}"
+                run.mkdir()
+                estado = {"resultado": resultado}
+                estado["cuenta_para_tope"] = resultado not in d.RESULTADOS_NO_CUENTAN_PARA_TOPE
+                (run / "estado.json").write_text(json.dumps(estado), encoding="utf-8")
+            self.assertEqual(d.contar_rondas_para_tope(base), d.MAX_RONDAS)
+            self.assertEqual(d.siguiente_ronda(base), 4)
+
+            divergente = base / "ronda-4"
+            divergente.mkdir()
+            (divergente / "estado.json").write_text(
+                json.dumps({"resultado": "worktree_base_divergente", "cuenta_para_tope": False}),
+                encoding="utf-8",
+            )
+            self.assertEqual(d.contar_rondas_para_tope(base), d.MAX_RONDAS)
+
+    def test_intentos_con_error_conservan_evidencia_y_no_consumen_tope(self):
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "runs" / "demo-001"
+            base.mkdir(parents=True)
+            for n in (1, 2):
+                run = base / f"ronda-{d.siguiente_ronda(base)}"
+                run.mkdir()
+                evidencia = run / "agy.err"
+                evidencia.write_text(f"error {n}", encoding="utf-8")
+                (run / "estado.json").write_text(json.dumps({"resultado": "error_antigravity",
+                                                                "cuenta_para_tope": False}), encoding="utf-8")
+            self.assertEqual([r.name for r in d.rondas_del_id(base)], ["ronda-1", "ronda-2"])
+            self.assertEqual((base / "ronda-1" / "agy.err").read_text(encoding="utf-8"), "error 1")
+            self.assertEqual(d.siguiente_ronda(base), 3)
+            self.assertEqual(d.contar_rondas_para_tope(base), 0)
+
+    def test_dos_rondas_de_trabajo_activan_tope_y_errores_no(self):
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            for n, cuenta in enumerate((False, False, True, True), 1):
+                run = base / f"ronda-{n}"
+                run.mkdir()
+                (run / "estado.json").write_text(json.dumps({"cuenta_para_tope": cuenta}), encoding="utf-8")
+            self.assertEqual(d.contar_rondas_para_tope(base), d.MAX_RONDAS)
+            self.assertEqual(d.siguiente_ronda(base), 5)
+
+    def test_rondas_legacy_cuentan_para_tope(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp) / "ronda-1"
+            run.mkdir()
+            (run / "opencode.jsonl").touch()
+            self.assertTrue(d.ronda_cuenta_para_tope(run))
 
 class TestCodexRunner(unittest.TestCase):
     def test_comando_codex_usa_workspace_write_y_nunca_pide_aprobacion(self):
@@ -1130,6 +1360,12 @@ class TestOraculoTimeout(unittest.TestCase):
 
 
 class TestEstadoVersionado(unittest.TestCase):
+    def test_permisos_denegados_indican_siguiente_accion(self):
+        estado = d.normalizar_estado({"resultado": "motor_sin_respuesta",
+                                      "motivo": "permisos_denegados"},
+                                     "2026-10-14T00:00:00+00:00")
+        self.assertIn("reasignar a otro motor", estado["siguiente_accion"])
+
     def test_normaliza_estado_con_accion_y_timestamps_utc(self):
         estado = d.normalizar_estado({"resultado": "baseline_rojo"}, "2026-10-14T00:00:00+00:00")
         self.assertEqual(estado["schema_version"], 1)

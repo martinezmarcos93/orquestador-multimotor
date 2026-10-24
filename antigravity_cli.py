@@ -43,6 +43,14 @@ def interpretar_resultado(stdout: str, returncode: int, timeout: bool = False) -
                 "error": "el sobre JSON de agy no es un objeto"}
     status = envelope.get("status")
     response = envelope.get("response")
+    denied_actions = envelope.get("denied_actions")
+    if not isinstance(denied_actions, list):
+        denied_actions = []
+    if denied_actions:
+        return {"ok": False, "status": "SUCCESS", "motivo": "permisos_denegados",
+                "denied_actions": denied_actions,
+                "conversation_id": envelope.get("conversation_id"),
+                "usage": envelope.get("usage")}
     if returncode != 0 or status != "SUCCESS":
         return {"ok": False, "status": str(status or "PROCESS_ERROR"),
                 "error": str(envelope.get("error") or f"agy terminó con código {returncode}"),
@@ -52,7 +60,7 @@ def interpretar_resultado(stdout: str, returncode: int, timeout: bool = False) -
         return {"ok": False, "status": "INVALID_OUTPUT",
                 "error": "agy indicó SUCCESS pero no devolvió response textual",
                 "conversation_id": envelope.get("conversation_id"),
-                "usage": envelope.get("usage")}
+                "usage": envelope.get("usage"), "denied_actions": denied_actions}
     return {"ok": True, "status": "SUCCESS", "response": response,
             "conversation_id": envelope.get("conversation_id"),
             "usage": envelope.get("usage"),

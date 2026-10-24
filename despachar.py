@@ -44,6 +44,12 @@ RAIZ = Path(__file__).resolve().parent
 RUNS = RAIZ / "runs"
 SRC = Path.home() / "src"
 MAX_RONDAS = 2
+RESULTADOS_NO_CUENTAN_PARA_TOPE = {
+    "error_opencode", "error_codex", "error_antigravity", "timeout",
+    "error_despachador", "motor_sin_respuesta",
+    "dry_run", "baseline_rojo", "worktree_base_divergente", "worktree_reutilizado_sucio",
+    "presupuesto_no_verificable", "presupuesto_agotado",
+}
 MAX_CUERPO_ENCARGO = 30_000
 # Prefijos de proveedores: distinguen mayúsculas (si no, 'aKIA' dentro de un base64 de imagen es un falso positivo).
 # Valores que son marcadores de prueba o referencias a otra fuente, no credenciales literales.
@@ -326,7 +332,9 @@ def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: 
                       inmutables: list[str] | None = None,
                       presupuesto_agotado: bool = False, presupuesto_no_verificable: bool = False,
                       puntaje_mutacion: float | None = None, umbral_mutacion: float = 0.0,
-                      error_mutacion: bool = False, sin_candidatos_mutacion: bool = False) -> str:
+                      error_mutacion: bool = False, sin_candidatos_mutacion: bool = False,
+                      ignorados_sin_commitear: list[str] | None = None,
+                      motor_sin_respuesta: bool = False) -> str:
     """Veredicto único; el orden es el de gravedad."""
     if secretos:
         return "posible_secreto"
@@ -342,7 +350,11 @@ def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: 
         return "presupuesto_agotado"
     if timeout:
         return "timeout"
+    if ignorados_sin_commitear:
+        return "trabajo_sin_commitear"
     if commits == 0 and not sucios:
+        if motor_sin_respuesta and rc_opencode == 0:
+            return "motor_sin_respuesta"
         return "sin_cambios" if rc_opencode == 0 else "error_opencode"
     if sucios:
         return "trabajo_sin_commitear"
@@ -355,6 +367,52 @@ def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: 
     if puntaje_mutacion is not None and puntaje_mutacion < umbral_mutacion:
         return "tests_debiles"
     return "pasa"
+
+
+def opencode_sin_respuesta(path: Path) -> bool:
+    """True si el JSONL no contiene texto del modelo ni herramientas aparte de skill."""
+    import json
+    try:
+        lineas = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+    for linea in lineas:
+        try:
+            evento = json.loads(linea)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(evento, dict):
+            continue
+        parte = evento.get("part") if isinstance(evento.get("part"), dict) else {}
+        if parte.get("type") == "text" and str(parte.get("text", "")).strip():
+            return False
+        if evento.get("type") in ("tool", "tool-call", "tool_use") or parte.get("type") in ("tool", "tool-call", "tool_use"):
+            herramienta = str(parte.get("tool") or parte.get("name") or evento.get("tool") or "").lower()
+            if herramienta != "skill" and not herramienta.startswith("skill."):
+                return False
+    return True
+
+
+def ajustar_resultado_por_motor(resultado: str, *, motor: str, rc: int, timeout: bool,
+                                commits: int, sucios: list[str], resultado_antigravity: dict | None,
+                                opencode_sin_respuesta: bool,
+                                rama_cambiada_incompatible: bool) -> tuple[str, str | None]:
+    """Aplica los ajustes finales específicos del motor y devuelve resultado y motivo."""
+    motivo = None
+    if motor == "opencode" and rc == 0 and commits == 0 and not sucios and opencode_sin_respuesta:
+        resultado = "motor_sin_respuesta"
+    if motor == "antigravity" and resultado_antigravity and resultado_antigravity.get("motivo") == "permisos_denegados":
+        resultado = "motor_sin_respuesta"
+        motivo = "permisos_denegados"
+    if motor == "codex" and resultado == "error_opencode":
+        resultado = "error_codex"
+    if (motor == "antigravity" and not timeout and resultado_antigravity
+            and not resultado_antigravity.get("ok") and not resultado_antigravity.get("denied_actions")):
+        resultado = "error_antigravity"
+    if rama_cambiada_incompatible:
+        resultado = "fuera_de_alcance"
+        motivo = "rama cambiada"
+    return resultado, motivo
 
 
 def clasificar_resultado_test_first(resultado: str, rc_opencode: int, archivos: list[str],
@@ -406,6 +464,27 @@ def listar_sucios(wt: Path) -> list[str]:
     return [l[3:] for l in r.stdout.splitlines() if l]
 
 
+ARTEFACTOS_REGENERABLES_IGNORADOS = frozenset({
+    "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "node_modules", ".venv", "venv",
+})
+
+
+def es_artefacto_regenerable(ruta: str) -> bool:
+    partes = Path(ruta).parts
+    return (any(parte in ARTEFACTOS_REGENERABLES_IGNORADOS or parte.endswith(".egg-info") for parte in partes)
+            or ruta.endswith((".pyc", ".pyo")))
+
+
+def listar_ignorados(wt: Path) -> list[str]:
+    """Lista archivos ignorados individuales sin incluir directorios compactados."""
+    r = subprocess.run(["git", "status", "--ignored", "--porcelain", "-uall"], cwd=wt,
+                       capture_output=True, text=True, encoding="utf-8")
+    if r.returncode != 0:
+        raise RuntimeError(f"git status --ignored falló: {r.stderr.strip()}")
+    return [l[3:] for l in r.stdout.splitlines()
+            if l.startswith("!! ") and not es_artefacto_regenerable(l[3:])]
+
+
 def commitear_pendientes(wt: Path, cfg: dict) -> bool:
     """Commit hecho por el despachador para el motor Codex.
 
@@ -413,9 +492,16 @@ def commitear_pendientes(wt: Path, cfg: dict) -> bool:
     fuera de sus writable_roots), así que el trabajador no puede commitear. Se commitea aquí
     todo lo pendiente; el alcance, los inmutables y el oráculo se verifican después sobre ese commit.
     """
-    if not listar_sucios(wt):
+    sucios = listar_sucios(wt)
+    ignorados = [p for p in listar_ignorados(wt) if not fuera_de_alcance([p], cfg["permitidos"])]
+    exactos = [p for p in ignorados if p in cfg["permitidos"]]
+    sin_commitear = [p for p in ignorados if p not in exactos]
+    cfg["ignorados_sin_commitear"] = sin_commitear
+    if not sucios and not exactos:
         return False
     git(wt, "add", "-A")
+    for ruta in exactos:
+        git(wt, "add", "-f", "--", ruta)
     git(wt, "-c", "user.name=orquestador-opencode", "-c", "user.email=orquestador@localhost",
         "commit", "-q", "-m", f"chore(codex): trabajo del encargo {cfg['id']} ({cfg['tema']})")
     return True
@@ -799,10 +885,35 @@ def mensaje_para_antigravity(texto_encargo: str, wt: Path, repo: Path, agente: s
 
 def mensaje_para_trabajador(cfg: dict, texto_encargo: str, wt: Path, repo: Path) -> str:
     if cfg.get("motor", "opencode") == "codex":
-        return mensaje_para_codex(texto_encargo, wt, repo, cfg["agente"])
-    if cfg.get("motor") == "antigravity":
-        return mensaje_para_antigravity(texto_encargo, wt, repo, cfg["agente"])
-    return mensaje_para_opencode(texto_encargo, wt, repo)
+        mensaje = mensaje_para_codex(texto_encargo, wt, repo, cfg["agente"])
+    elif cfg.get("motor") == "antigravity":
+        mensaje = mensaje_para_antigravity(texto_encargo, wt, repo, cfg["agente"])
+    else:
+        mensaje = mensaje_para_opencode(texto_encargo, wt, repo)
+    comandos = "\n".join(cfg["oraculo"])
+    return (f"{mensaje}\n\nPara verificar usá exactamente estos comandos (son el oráculo):\n"
+            f"{comandos}")
+
+
+def reconciliar_rama_worker(wt: Path, rama_esperada: str, base_sha: str) -> tuple[str, bool]:
+    """Devuelve la rama observada y si se pudo recuperar la rama esperada de forma segura."""
+    observada = git(wt, "branch", "--show-current")
+    if observada == rama_esperada:
+        return observada, True
+    head = git(wt, "rev-parse", "HEAD")
+    base_es_ancestro_head = base_es_ancestro(base_sha, wt)
+    r = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", rama_esperada, head], cwd=wt,
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    if r.returncode not in (0, 1):
+        raise RuntimeError(f"no se pudo validar la rama esperada: {r.stderr.strip()}")
+    rama_es_ancestro_head = r.returncode == 0
+    if not (base_es_ancestro_head and rama_es_ancestro_head):
+        return observada, False
+    git(wt, "branch", "-f", rama_esperada, head)
+    git(wt, "checkout", rama_esperada)
+    return observada, True
 
 
 def ejecutar_codex_con_timeout(cmd: list[str], mensaje: str, *, cwd: Path, timeout_s: float,
@@ -882,6 +993,31 @@ def revisar_solo(ruta_encargo: Path) -> dict:
             "aprobacion": aprobar_revision(revision)}
 
 
+def rondas_del_id(run_base: Path) -> list[Path]:
+    """Devuelve las rondas numeradas existentes, incluidas las que fallaron antes de generar logs."""
+    return sorted((r for r in run_base.glob("ronda-*") if r.is_dir() and
+                   re.fullmatch(r"ronda-[1-9][0-9]*", r.name)),
+                  key=lambda r: int(r.name.removeprefix("ronda-")))
+
+
+def ronda_cuenta_para_tope(run: Path) -> bool:
+    """Los estados previos al campo nuevo se consideran rondas de trabajo por compatibilidad."""
+    try:
+        estado = json.loads((run / "estado.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return True
+    return estado.get("cuenta_para_tope", True) is not False
+
+
+def siguiente_ronda(run_base: Path) -> int:
+    rondas = rondas_del_id(run_base)
+    return int(rondas[-1].name.removeprefix("ronda-")) + 1 if rondas else 1
+
+
+def contar_rondas_para_tope(run_base: Path) -> int:
+    return sum(1 for r in rondas_del_id(run_base) if ronda_cuenta_para_tope(r))
+
+
 def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: bool = False) -> dict:
     texto = ruta_encargo.read_text(encoding="utf-8")
     cfg = parsear_encargo(texto)
@@ -890,11 +1026,12 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         raise ValueError(f"{repo} no es un repo git")
 
     run_base = RUNS / f"{cfg['proyecto']}-{cfg['id']}"
-    ronda = 1 + sum(1 for r in run_base.glob("ronda-*") if (r / "opencode.jsonl").exists())
+    rondas = rondas_del_id(run_base)
+    ronda = siguiente_ronda(run_base)
     if reevaluar:
-        if ronda == 1:
+        if not rondas:
             raise ValueError("no hay ninguna ronda ejecutada que reevaluar")
-        ronda -= 1      # la última ronda ya ejecutada; no consume una nueva
+        ronda = int(rondas[-1].name.removeprefix("ronda-"))  # no consume una nueva
     estado = {
         "id": cfg["id"], "proyecto": cfg["proyecto"], "agente": cfg["agente"], "ronda": ronda,
         "presupuesto_tokens": cfg.get("presupuesto_tokens"), "depende_de": cfg.get("depende_de", []),
@@ -902,12 +1039,15 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         "sandbox": cfg.get("sandbox", "ninguno"),
         "revisor_requerido": bool(cfg.get("revisor", False)),
     }
-    if ronda > MAX_RONDAS and not reevaluar:
+    rondas_contables = contar_rondas_para_tope(run_base)
+    if rondas_contables >= MAX_RONDAS and not reevaluar:
         estado["resultado"] = "tope_rondas"
         estado["nota"] = f"ya se hicieron {MAX_RONDAS} rondas: lo toma Claude (regla de calibre)"
         return estado
     run = run_base / ("reevaluacion" if reevaluar else f"ronda-{ronda}")
-    run.mkdir(parents=True, exist_ok=True)
+    if not reevaluar and run.exists():
+        raise RuntimeError(f"el directorio de ronda ya existe y no se sobrescribirá: {run}")
+    run.mkdir(parents=True, exist_ok=reevaluar)
     (run / "FIN").unlink(missing_ok=True)
     estado["run"] = str(run)
     etapa(run, f"encargo {cfg['id']} · ronda {ronda} · agente {cfg['agente']}")
@@ -951,9 +1091,11 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         t0, timeout, rc = time.time(), False, 0
         presupuesto_agotado = False
         presupuesto_no_verificable = False
+        rama_cambiada_incompatible = False
         tokens_entrada_observados = None
         tokens_entrada_parcial = None
         resultado_antigravity = None
+        agy_denied_actions = []
         if reevaluar:
             etapa(run, "reevaluación: no se vuelve a lanzar OpenCode (ni se gasta cuota ni una ronda)")
         else:
@@ -1002,6 +1144,9 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                 resultado_antigravity = antigravity_cli.interpretar_resultado(salida_agy, rc, timeout)
                 estado["antigravity_status"] = resultado_antigravity.get("status")
                 estado["antigravity_conversation_id"] = resultado_antigravity.get("conversation_id")
+                agy_denied_actions = resultado_antigravity.get("denied_actions", [])
+                if agy_denied_actions:
+                    estado["acciones_denegadas"] = agy_denied_actions
                 if resultado_antigravity.get("error"):
                     estado["error_antigravity"] = resultado_antigravity["error"]
                     rc = -1
@@ -1056,6 +1201,15 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                 estado["uso"] = uso.resumir_archivo(run / "opencode.jsonl")
             if tokens_entrada_observados is None:
                 tokens_entrada_observados = estado["uso"].get("entrada")
+
+        if not reevaluar:
+            rama_observada, rama_recuperada = reconciliar_rama_worker(wt, rama, sha_base_main)
+            if rama_observada != rama:
+                estado["rama_observada"] = rama_observada
+                aviso_rama = f"El worker cambió de rama: esperada {rama}, observada {rama_observada}."
+                estado.setdefault("advertencias", []).append(aviso_rama)
+                logger.warning(aviso_rama)
+                rama_cambiada_incompatible = not rama_recuperada
 
         if cfg["motor"] == "codex" and rc == 0 and not timeout:
             if commitear_pendientes(wt, cfg):
@@ -1112,6 +1266,10 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
             espera_rojo=cfg.get("espera_rojo", False), depende_de=cfg.get("depende_de", []),
             commits=commits, archivos=sorted(cambiados), fuera_de_alcance=fuera,
             archivos_inmutables=protegidos, sin_commitear=sucios,
+            ignorados_sin_commitear=cfg.get("ignorados_sin_commitear", []),
+            advertencia_ignorados=("Hay archivos ignorados permitidos que no se agregaron: " +
+                                   ", ".join(cfg["ignorados_sin_commitear"])
+                                   if cfg.get("ignorados_sin_commitear") else None),
             dependencias_tocadas=dependencias, oraculo_despues=oraculo_despues,
             reporte=(wt / "REPORTE.md").exists(), rc_opencode=rc, rc_worker=rc,
             head_sha_fin=head_fin,
@@ -1129,13 +1287,18 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                                         sin_candidatos_mutacion=bool(
                                             mut_cfg and resumen_mut and not resumen_mut.get("error")
                                             and resumen_mut.get("total", 0) == 0
-                                        )),
+                                        ),
+                                        ignorados_sin_commitear=cfg.get("ignorados_sin_commitear", [])),
         )
-        if cfg["motor"] == "codex" and estado["resultado"] == "error_opencode":
-            estado["resultado"] = "error_codex"
-        if (cfg["motor"] == "antigravity" and not timeout and resultado_antigravity
-                and not resultado_antigravity.get("ok")):
-            estado["resultado"] = "error_antigravity"
+        estado["resultado"], motivo_motor = ajustar_resultado_por_motor(
+            estado["resultado"], motor=cfg["motor"], rc=rc, timeout=timeout,
+            commits=commits, sucios=sucios, resultado_antigravity=resultado_antigravity,
+            opencode_sin_respuesta=(opencode_sin_respuesta(run / "opencode.jsonl")
+                                    if cfg["motor"] == "opencode" else False),
+            rama_cambiada_incompatible=rama_cambiada_incompatible,
+        )
+        if motivo_motor:
+            estado["motivo"] = motivo_motor
         if cfg.get("espera_rojo"):
             texto_oraculo_despues = ""
             if log_oraculo.exists() and "offset_oraculo_despues" in locals():
@@ -1168,6 +1331,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         return estado
 
     finally:
+        estado["cuenta_para_tope"] = estado.get("resultado") not in RESULTADOS_NO_CUENTAN_PARA_TOPE
         # También deja trazabilidad en salidas tempranas (p. ej. baseline_rojo o base divergente).
         if "wt" in locals() and wt.exists():
             try:
@@ -1203,6 +1367,7 @@ def crear_visor(pedido: bool):
 ACCIONES_SIGUIENTES = {
     "pasa": "Revisar diff, reporte y evidencia antes de integrar manualmente.",
     "sin_cambios": "Confirmar si el encargo ya estaba satisfecho o si faltó trabajo.",
+    "motor_sin_respuesta": "Reintentar la ejecución.",
     "error_opencode": "Inspeccionar opencode.err y el estado del worktree antes de reintentar.",
     "error_codex": "Inspeccionar opencode.err y el estado del worktree; Codex no recibió permisos interactivos y pudo ser bloqueado por workspace-write.",
     "error_antigravity": "Inspeccionar agy.err y agy.json; verificar autenticación, versión, estado de la respuesta y disponibilidad real del sandbox.",
@@ -1220,7 +1385,7 @@ ACCIONES_SIGUIENTES = {
     "viola_inmutables": "Restaurar los archivos protegidos; el encargo no autoriza modificarlos, borrarlos ni renombrarlos.",
     "posible_secreto": "Retirar la credencial, revisar su exposición y rotarla si corresponde.",
     "dependencia_nueva": "Revisar y autorizar explícitamente los cambios de dependencias.",
-    "trabajo_sin_commitear": "Pedir al trabajador que commitee o descarte sus cambios y reevaluar.",
+    "trabajo_sin_commitear": "Revisar los archivos sin commitear o ignorados indicados; incorporarlos explícitamente y reevaluar.",
     "falla_oraculo": "Inspeccionar oraculo.log y corregir los fallos de verificación.",
     "tests_debiles": "Revisar mutantes sobrevivientes y fortalecer las pruebas.",
     "tests_preparados": "Lanzar el encargo implementador dependiendo de esta rama y proteger los tests con inmutables.",
@@ -1254,6 +1419,8 @@ def normalizar_estado(estado: dict, inicio_utc: str) -> dict:
         estado["siguiente_accion"] = "Revisar el diagnóstico de integracion_previa; no asumir que la integración es limpia."
     elif aprobacion not in ("no_requerida", "aprobado") and resultado in ("pasa", "revision_manual"):
         estado["siguiente_accion"] = "Resolver el bloqueo del revisor antes de integrar; consultar el detalle de revision."
+    elif resultado == "motor_sin_respuesta" and estado.get("motivo") == "permisos_denegados":
+        estado["siguiente_accion"] = "Antigravity no tiene permisos para esta tarea: reasignar a otro motor o revisar permissions.allow."
     else:
         estado["siguiente_accion"] = ACCIONES_SIGUIENTES.get(
             resultado, "Inspeccionar estado.json y los logs asociados antes de continuar."
