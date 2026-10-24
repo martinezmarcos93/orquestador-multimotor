@@ -44,6 +44,10 @@ RAIZ = Path(__file__).resolve().parent
 RUNS = RAIZ / "runs"
 SRC = Path.home() / "src"
 MAX_RONDAS = 2
+RESULTADOS_NO_CUENTAN_PARA_TOPE = {
+    "error_opencode", "error_codex", "error_antigravity", "timeout",
+    "error_despachador", "motor_sin_respuesta",
+}
 MAX_CUERPO_ENCARGO = 30_000
 # Prefijos de proveedores: distinguen mayúsculas (si no, 'aKIA' dentro de un base64 de imagen es un falso positivo).
 # Valores que son marcadores de prueba o referencias a otra fuente, no credenciales literales.
@@ -882,6 +886,31 @@ def revisar_solo(ruta_encargo: Path) -> dict:
             "aprobacion": aprobar_revision(revision)}
 
 
+def rondas_del_id(run_base: Path) -> list[Path]:
+    """Devuelve las rondas numeradas existentes, incluidas las que fallaron antes de generar logs."""
+    return sorted((r for r in run_base.glob("ronda-*") if r.is_dir() and
+                   re.fullmatch(r"ronda-[1-9][0-9]*", r.name)),
+                  key=lambda r: int(r.name.removeprefix("ronda-")))
+
+
+def ronda_cuenta_para_tope(run: Path) -> bool:
+    """Los estados previos al campo nuevo se consideran rondas de trabajo por compatibilidad."""
+    try:
+        estado = json.loads((run / "estado.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return True
+    return estado.get("cuenta_para_tope", True) is not False
+
+
+def siguiente_ronda(run_base: Path) -> int:
+    rondas = rondas_del_id(run_base)
+    return int(rondas[-1].name.removeprefix("ronda-")) + 1 if rondas else 1
+
+
+def contar_rondas_para_tope(run_base: Path) -> int:
+    return sum(1 for r in rondas_del_id(run_base) if ronda_cuenta_para_tope(r))
+
+
 def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: bool = False) -> dict:
     texto = ruta_encargo.read_text(encoding="utf-8")
     cfg = parsear_encargo(texto)
@@ -890,11 +919,12 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         raise ValueError(f"{repo} no es un repo git")
 
     run_base = RUNS / f"{cfg['proyecto']}-{cfg['id']}"
-    ronda = 1 + sum(1 for r in run_base.glob("ronda-*") if (r / "opencode.jsonl").exists())
+    rondas = rondas_del_id(run_base)
+    ronda = siguiente_ronda(run_base)
     if reevaluar:
-        if ronda == 1:
+        if not rondas:
             raise ValueError("no hay ninguna ronda ejecutada que reevaluar")
-        ronda -= 1      # la última ronda ya ejecutada; no consume una nueva
+        ronda = int(rondas[-1].name.removeprefix("ronda-"))  # no consume una nueva
     estado = {
         "id": cfg["id"], "proyecto": cfg["proyecto"], "agente": cfg["agente"], "ronda": ronda,
         "presupuesto_tokens": cfg.get("presupuesto_tokens"), "depende_de": cfg.get("depende_de", []),
@@ -902,12 +932,15 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         "sandbox": cfg.get("sandbox", "ninguno"),
         "revisor_requerido": bool(cfg.get("revisor", False)),
     }
-    if ronda > MAX_RONDAS and not reevaluar:
+    rondas_contables = contar_rondas_para_tope(run_base)
+    if rondas_contables >= MAX_RONDAS and not reevaluar:
         estado["resultado"] = "tope_rondas"
         estado["nota"] = f"ya se hicieron {MAX_RONDAS} rondas: lo toma Claude (regla de calibre)"
         return estado
     run = run_base / ("reevaluacion" if reevaluar else f"ronda-{ronda}")
-    run.mkdir(parents=True, exist_ok=True)
+    if not reevaluar and run.exists():
+        raise RuntimeError(f"el directorio de ronda ya existe y no se sobrescribirá: {run}")
+    run.mkdir(parents=True, exist_ok=reevaluar)
     (run / "FIN").unlink(missing_ok=True)
     estado["run"] = str(run)
     etapa(run, f"encargo {cfg['id']} · ronda {ronda} · agente {cfg['agente']}")
@@ -1168,6 +1201,7 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
         return estado
 
     finally:
+        estado["cuenta_para_tope"] = estado.get("resultado") not in RESULTADOS_NO_CUENTAN_PARA_TOPE
         # También deja trazabilidad en salidas tempranas (p. ej. baseline_rojo o base divergente).
         if "wt" in locals() and wt.exists():
             try:

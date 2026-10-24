@@ -34,7 +34,7 @@ Hasta decidir, Antigravity **no sirve como motor de escritura desatendido**.
 | # | Incidente | Estado |
 |---|---|---|
 | 1 | Todo veredicto de Antigravity terminaba en `error_estado_invalido`: `schemas/estado.v1.schema.json` no tenía `antigravity` en el enum de `motor` | **Corregido** (enum + test de regresión) |
-| 2 | Tras un error de Antigravity, la siguiente ejecución del mismo `id` volvió a registrarse como «ronda 1» en el mismo directorio y pisó la evidencia anterior | Abierto |
+| 2 | Tras un error de Antigravity, la siguiente ejecución del mismo `id` volvió a registrarse como «ronda 1» en el mismo directorio y pisó la evidencia anterior | **Corregido**: cada intento toma el siguiente `ronda-N`; los errores de motor/entorno dejan evidencia sin consumir el tope de dos rondas de trabajo |
 | 3 | Integrar en la rama `base` entregas aprobadas mientras otros encargos esperan su ronda 2 provoca `worktree_base_divergente` | Mitigado: fijar `base` en una rama inmóvil (p. ej. `base/<tanda>`) y acumular lo aprobado en otra rama |
 | 4 | Codex no puede escribir el índice git del worktree (`.git/worktrees/...` queda fuera de su sandbox, *Read-only file system*). El auto-commit del despachador no incluye archivos ignorados (Hanna ignora `docs/`): un documento nuevo quedó sin commitear y lo commiteó el director | Abierto: el despachador podría avisar cuando quedan archivos ignorados dentro de `permitidos` |
 | 5 | El sandbox de Codex no ve el `.venv` enlazado, así que el worker corre los tests con el Python del sistema y reporta «faltan dependencias». El oráculo del despachador sí pasa | Abierto: documentado; el oráculo manda |

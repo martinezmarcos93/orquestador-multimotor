@@ -87,7 +87,7 @@ Un **worktree no es un sandbox de seguridad**. Usar repositorios desechables y s
 
 ## Resultados
 
-El despachador registra el estado y la evidencia en `runs/`. Los resultados pueden indicar éxito, fallo del oráculo, cambio fuera de alcance, violación de rutas inmutables, timeout o error del motor. Ante un fallo, revisar los logs y corregir el encargo; no integrar una entrega rechazada.
+El despachador registra el estado y la evidencia en `runs/`. Cada ejecución usa un directorio `ronda-N` nuevo. Los errores del motor o del entorno conservan su evidencia, pero no cuentan para el tope de dos rondas de trabajo; `estado.json` indica esto con `cuenta_para_tope: false`. Los resultados también pueden indicar fallo del oráculo, cambio fuera de alcance o violación de rutas inmutables. Ante un fallo, revisar los logs y corregir el encargo; no integrar una entrega rechazada.
 
 ## Documentación
 

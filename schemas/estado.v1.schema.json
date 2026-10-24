@@ -45,6 +45,9 @@
       "type": "integer",
       "minimum": 1
     },
+    "cuenta_para_tope": {
+      "type": "boolean"
+    },
     "run": {
       "type": "string"
     },

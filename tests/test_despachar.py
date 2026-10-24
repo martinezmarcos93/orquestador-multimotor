@@ -943,7 +943,42 @@ class TestVeredicto(unittest.TestCase):
         self.assertEqual(self.v(timeout=True), "timeout")
 
 
+class TestContadorRondas(unittest.TestCase):
+    def test_intentos_con_error_conservan_evidencia_y_no_consumen_tope(self):
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "runs" / "demo-001"
+            base.mkdir(parents=True)
+            for n in (1, 2):
+                run = base / f"ronda-{d.siguiente_ronda(base)}"
+                run.mkdir()
+                evidencia = run / "agy.err"
+                evidencia.write_text(f"error {n}", encoding="utf-8")
+                (run / "estado.json").write_text(json.dumps({"resultado": "error_antigravity",
+                                                                "cuenta_para_tope": False}), encoding="utf-8")
+            self.assertEqual([r.name for r in d.rondas_del_id(base)], ["ronda-1", "ronda-2"])
+            self.assertEqual((base / "ronda-1" / "agy.err").read_text(encoding="utf-8"), "error 1")
+            self.assertEqual(d.siguiente_ronda(base), 3)
+            self.assertEqual(d.contar_rondas_para_tope(base), 0)
 
+    def test_dos_rondas_de_trabajo_activan_tope_y_errores_no(self):
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            for n, cuenta in enumerate((False, False, True, True), 1):
+                run = base / f"ronda-{n}"
+                run.mkdir()
+                (run / "estado.json").write_text(json.dumps({"cuenta_para_tope": cuenta}), encoding="utf-8")
+            self.assertEqual(d.contar_rondas_para_tope(base), d.MAX_RONDAS)
+            self.assertEqual(d.siguiente_ronda(base), 5)
+
+    def test_rondas_legacy_cuentan_para_tope(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp) / "ronda-1"
+            run.mkdir()
+            (run / "opencode.jsonl").touch()
+            self.assertTrue(d.ronda_cuenta_para_tope(run))
 
 class TestCodexRunner(unittest.TestCase):
     def test_comando_codex_usa_workspace_write_y_nunca_pide_aprobacion(self):
