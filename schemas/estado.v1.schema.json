@@ -32,6 +32,10 @@
       "type": "string",
       "minLength": 1
     },
+    "ignorados_sin_commitear": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
     "id": {
       "type": "string"
     },

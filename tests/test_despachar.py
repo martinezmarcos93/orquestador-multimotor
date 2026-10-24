@@ -1,4 +1,6 @@
 import sys
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,6 +18,43 @@ oraculo = ["pytest -q"]
 +++
 # Encargo 001
 '''
+
+
+class TestCommitIgnorados(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+        (self.repo / ".gitignore").write_text("docs/\n", encoding="utf-8")
+        (self.repo / "base.txt").write_text("base\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-f", ".gitignore", "base.txt"], cwd=self.repo, check=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@localhost", "commit", "-qm", "base"],
+                       cwd=self.repo, check=True)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_ruta_exacta_ignorada_se_commitea_y_afuera_no(self):
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "decision.md").write_text("ok\n", encoding="utf-8")
+        (self.repo / "docs" / "fuera.md").write_text("no\n", encoding="utf-8")
+        cfg = {"id": "1", "tema": "demo", "permitidos": ["docs/decision.md"]}
+        self.assertTrue(d.commitear_pendientes(self.repo, cfg))
+        tracked = d.git(self.repo, "show", "--pretty=", "--name-only", "HEAD").splitlines()
+        self.assertIn("docs/decision.md", tracked)
+        self.assertNotIn("docs/fuera.md", tracked)
+        self.assertEqual(cfg["ignorados_sin_commitear"], [])
+
+    def test_patron_comodin_no_fuerza_add_y_se_reporta(self):
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "decision.md").write_text("ok\n", encoding="utf-8")
+        cfg = {"id": "1", "tema": "demo", "permitidos": ["docs/**"]}
+        self.assertFalse(d.commitear_pendientes(self.repo, cfg))
+        self.assertEqual(cfg["ignorados_sin_commitear"], ["docs/decision.md"])
+        self.assertEqual(d.decidir_resultado(timeout=False, rc_opencode=0, commits=0, sucios=[],
+                         fuera=[], oraculo_ok=True, dependencias=[], secretos=False,
+                         ignorados_sin_commitear=cfg["ignorados_sin_commitear"]), "trabajo_sin_commitear")
+        self.assertEqual(d.git(self.repo, "diff", "--cached", "--name-only"), "")
 
 
 class TestParseo(unittest.TestCase):

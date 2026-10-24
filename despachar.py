@@ -332,7 +332,8 @@ def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: 
                       inmutables: list[str] | None = None,
                       presupuesto_agotado: bool = False, presupuesto_no_verificable: bool = False,
                       puntaje_mutacion: float | None = None, umbral_mutacion: float = 0.0,
-                      error_mutacion: bool = False, sin_candidatos_mutacion: bool = False) -> str:
+                      error_mutacion: bool = False, sin_candidatos_mutacion: bool = False,
+                      ignorados_sin_commitear: list[str] | None = None) -> str:
     """Veredicto único; el orden es el de gravedad."""
     if secretos:
         return "posible_secreto"
@@ -348,6 +349,8 @@ def decidir_resultado(*, timeout: bool, rc_opencode: int, commits: int, sucios: 
         return "presupuesto_agotado"
     if timeout:
         return "timeout"
+    if ignorados_sin_commitear:
+        return "trabajo_sin_commitear"
     if commits == 0 and not sucios:
         return "sin_cambios" if rc_opencode == 0 else "error_opencode"
     if sucios:
@@ -412,6 +415,15 @@ def listar_sucios(wt: Path) -> list[str]:
     return [l[3:] for l in r.stdout.splitlines() if l]
 
 
+def listar_ignorados(wt: Path) -> list[str]:
+    """Lista archivos ignorados individuales sin incluir directorios compactados."""
+    r = subprocess.run(["git", "status", "--ignored", "--porcelain", "-uall"], cwd=wt,
+                       capture_output=True, text=True, encoding="utf-8")
+    if r.returncode != 0:
+        raise RuntimeError(f"git status --ignored falló: {r.stderr.strip()}")
+    return [l[3:] for l in r.stdout.splitlines() if l.startswith("!! ")]
+
+
 def commitear_pendientes(wt: Path, cfg: dict) -> bool:
     """Commit hecho por el despachador para el motor Codex.
 
@@ -419,9 +431,16 @@ def commitear_pendientes(wt: Path, cfg: dict) -> bool:
     fuera de sus writable_roots), así que el trabajador no puede commitear. Se commitea aquí
     todo lo pendiente; el alcance, los inmutables y el oráculo se verifican después sobre ese commit.
     """
-    if not listar_sucios(wt):
+    sucios = listar_sucios(wt)
+    ignorados = [p for p in listar_ignorados(wt) if not fuera_de_alcance([p], cfg["permitidos"])]
+    exactos = [p for p in ignorados if p in cfg["permitidos"]]
+    sin_commitear = [p for p in ignorados if p not in exactos]
+    cfg["ignorados_sin_commitear"] = sin_commitear
+    if not sucios and not exactos:
         return False
     git(wt, "add", "-A")
+    for ruta in exactos:
+        git(wt, "add", "-f", "--", ruta)
     git(wt, "-c", "user.name=orquestador-opencode", "-c", "user.email=orquestador@localhost",
         "commit", "-q", "-m", f"chore(codex): trabajo del encargo {cfg['id']} ({cfg['tema']})")
     return True
@@ -1147,6 +1166,10 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
             espera_rojo=cfg.get("espera_rojo", False), depende_de=cfg.get("depende_de", []),
             commits=commits, archivos=sorted(cambiados), fuera_de_alcance=fuera,
             archivos_inmutables=protegidos, sin_commitear=sucios,
+            ignorados_sin_commitear=cfg.get("ignorados_sin_commitear", []),
+            advertencia_ignorados=("Hay archivos ignorados permitidos que no se agregaron: " +
+                                   ", ".join(cfg["ignorados_sin_commitear"])
+                                   if cfg.get("ignorados_sin_commitear") else None),
             dependencias_tocadas=dependencias, oraculo_despues=oraculo_despues,
             reporte=(wt / "REPORTE.md").exists(), rc_opencode=rc, rc_worker=rc,
             head_sha_fin=head_fin,
@@ -1164,7 +1187,8 @@ def despachar(ruta_encargo: Path, dry_run: bool = False, visor=None, reevaluar: 
                                         sin_candidatos_mutacion=bool(
                                             mut_cfg and resumen_mut and not resumen_mut.get("error")
                                             and resumen_mut.get("total", 0) == 0
-                                        )),
+                                        ),
+                                        ignorados_sin_commitear=cfg.get("ignorados_sin_commitear", [])),
         )
         if cfg["motor"] == "codex" and estado["resultado"] == "error_opencode":
             estado["resultado"] = "error_codex"
@@ -1256,7 +1280,7 @@ ACCIONES_SIGUIENTES = {
     "viola_inmutables": "Restaurar los archivos protegidos; el encargo no autoriza modificarlos, borrarlos ni renombrarlos.",
     "posible_secreto": "Retirar la credencial, revisar su exposición y rotarla si corresponde.",
     "dependencia_nueva": "Revisar y autorizar explícitamente los cambios de dependencias.",
-    "trabajo_sin_commitear": "Pedir al trabajador que commitee o descarte sus cambios y reevaluar.",
+    "trabajo_sin_commitear": "Revisar los archivos sin commitear o ignorados indicados; incorporarlos explícitamente y reevaluar.",
     "falla_oraculo": "Inspeccionar oraculo.log y corregir los fallos de verificación.",
     "tests_debiles": "Revisar mutantes sobrevivientes y fortalecer las pruebas.",
     "tests_preparados": "Lanzar el encargo implementador dependiendo de esta rama y proteger los tests con inmutables.",
