@@ -944,6 +944,28 @@ class TestVeredicto(unittest.TestCase):
 
 
 class TestContadorRondas(unittest.TestCase):
+    def test_dry_run_y_base_divergente_no_consumen_tope_antes_de_dos_rondas_reales(self):
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "demo-001"
+            base.mkdir()
+            for n, resultado in enumerate(("dry_run", "pasa", "pasa"), 1):
+                run = base / f"ronda-{n}"
+                run.mkdir()
+                estado = {"resultado": resultado}
+                estado["cuenta_para_tope"] = resultado not in d.RESULTADOS_NO_CUENTAN_PARA_TOPE
+                (run / "estado.json").write_text(json.dumps(estado), encoding="utf-8")
+            self.assertEqual(d.contar_rondas_para_tope(base), d.MAX_RONDAS)
+            self.assertEqual(d.siguiente_ronda(base), 4)
+
+            divergente = base / "ronda-4"
+            divergente.mkdir()
+            (divergente / "estado.json").write_text(
+                json.dumps({"resultado": "worktree_base_divergente", "cuenta_para_tope": False}),
+                encoding="utf-8",
+            )
+            self.assertEqual(d.contar_rondas_para_tope(base), d.MAX_RONDAS)
+
     def test_intentos_con_error_conservan_evidencia_y_no_consumen_tope(self):
         import json, tempfile
         with tempfile.TemporaryDirectory() as tmp:

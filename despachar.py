@@ -47,6 +47,8 @@ MAX_RONDAS = 2
 RESULTADOS_NO_CUENTAN_PARA_TOPE = {
     "error_opencode", "error_codex", "error_antigravity", "timeout",
     "error_despachador", "motor_sin_respuesta",
+    "dry_run", "baseline_rojo", "worktree_base_divergente", "worktree_reutilizado_sucio",
+    "presupuesto_no_verificable", "presupuesto_agotado",
 }
 MAX_CUERPO_ENCARGO = 30_000
 # Prefijos de proveedores: distinguen mayúsculas (si no, 'aKIA' dentro de un base64 de imagen es un falso positivo).
