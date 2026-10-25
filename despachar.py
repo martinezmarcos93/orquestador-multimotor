@@ -502,7 +502,7 @@ def commitear_pendientes(wt: Path, cfg: dict) -> bool:
     git(wt, "add", "-A")
     for ruta in exactos:
         git(wt, "add", "-f", "--", ruta)
-    git(wt, "-c", "user.name=orquestador-opencode", "-c", "user.email=orquestador@localhost",
+    git(wt, "-c", "user.name=orquestador-multimotor", "-c", "user.email=orquestador@localhost",
         "commit", "-q", "-m", f"chore(codex): trabajo del encargo {cfg['id']} ({cfg['tema']})")
     return True
 
@@ -517,7 +517,7 @@ def commitear_reporte(wt: Path) -> bool:
     if not sucios or fuera_de_alcance(sucios, []):
         return False
     git(wt, "add", "-A")
-    git(wt, "-c", "user.name=orquestador-opencode", "-c", "user.email=orquestador@localhost",
+    git(wt, "-c", "user.name=orquestador-multimotor", "-c", "user.email=orquestador@localhost",
         "commit", "-q", "-m", "docs(opencode): reporte del trabajador")
     return True
 

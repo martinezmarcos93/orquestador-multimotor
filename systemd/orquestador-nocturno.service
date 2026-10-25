@@ -1,6 +1,7 @@
 [Unit]
-Description=Cola nocturna del orquestador (OpenCode)
+Description=Cola nocturna del orquestador multimotor
 After=litellm-opencode.service network-online.target
+RequiresMountsFor=/media/marcos/A68072A880727F1D/01-Marcos/00-Programacion/00-Proyectos/orquestador-multimotor
 Wants=litellm-opencode.service
 
 [Service]
@@ -8,6 +9,6 @@ Type=oneshot
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-%h/.config/opencode-free/.env
 # Cambiá la ruta al clon del repo y a la carpeta de la cola antes de instalar.
-ExecStart=/usr/bin/python3 -u %h/src/orquestador-opencode/nocturna.py --carpeta %h/orquestador-cola --max 2
+ExecStart=/usr/bin/python3 -u /media/marcos/A68072A880727F1D/01-Marcos/00-Programacion/00-Proyectos/orquestador-multimotor/nocturna.py --carpeta %h/orquestador-cola --max 2
 TimeoutStartSec=10h
 Nice=10

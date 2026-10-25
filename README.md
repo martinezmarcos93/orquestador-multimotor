@@ -68,7 +68,7 @@ La suite de verificación no necesita lanzar modelos ni requiere red.
    ```bash
    python3 despachar.py ENCARGO.md --validar
    python3 despachar.py ENCARGO.md --dry-run
-   ``
+   ```
 3. Ejecutar el encargo solo después de revisar la configuración y el riesgo.
 4. Revisar `runs/<proyecto>-<id>/ronda-N/estado.json`, `REPORTE.md` y el diff.
 5. Integrar manualmente solo después de revisar y aprobar.

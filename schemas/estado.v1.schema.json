@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/martinezmarcos93/orquestador-opencode/blob/main/schemas/estado.v1.schema.json",
+  "$id": "https://github.com/martinezmarcos93/orquestador-multimotor/blob/main/schemas/estado.v1.schema.json",
   "title": "Estado de una corrida del orquestador",
   "description": "Contrato v1 del estado de una corrida. Se permiten campos adicionales para compatibilidad hacia delante.",
   "type": "object",

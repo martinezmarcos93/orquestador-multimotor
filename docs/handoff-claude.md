@@ -1,9 +1,9 @@
 # Handoff para Claude — barrido del orquestador
 
 Fecha: 2026-10-14  
-Repositorio: `martinezmarcos93/orquestador-opencode`  
+Repositorio: `martinezmarcos93/orquestador-multimotor`  
 Rama única de trabajo: `docs/roadmap-hardening`  
-PR: https://github.com/martinezmarcos93/orquestador-opencode/pull/1  
+PR: https://github.com/martinezmarcos93/orquestador-multimotor/pull/1  
 Base `main` conocida antes del barrido: `e183a3328cc7ef0194556b32064d594769ecfc51`
 
 ## Reglas de trabajo
@@ -28,7 +28,7 @@ Base `main` conocida antes del barrido: `e183a3328cc7ef0194556b32064d594769ecfc5
 
 GitHub Actions run #227 sobre el commit consolidado `eda41d6e1918070159598733efdcf6ba485d15fb`: **122 tests aprobados**, `bash verificar.sh` completado. No equivale a pruebas locales ni de integración real.
 
-Link de ejecución reciente a revisar: https://github.com/martinezmarcos93/orquestador-opencode/actions
+Link de ejecución reciente a revisar: https://github.com/martinezmarcos93/orquestador-multimotor/actions
 
 ## Trabajo que requiere el equipo anfitrión / Claude
 
@@ -67,7 +67,7 @@ Rama de trabajo única: `docs/roadmap-hardening`. No crear ramas auxiliares, no 
 - `despachar.py` acepta `inmutables = [...]`, valida que los patrones sean relativos y sin traversal, detecta rutas protegidas modificadas y emite `viola_inmutables`. La comparación de rutas usa `git diff --no-renames` para no ocultar el origen de renombres.
 - Si una entrega obtiene `pasa`, se ejecuta `git merge-tree --write-tree` contra el SHA actual de la base y el HEAD de trabajo. El resultado `integracion_previa` puede ser `limpia`, `conflictos` o `error`; la vista previa no modifica refs ni worktrees. `siguiente_accion` orienta la recuperación.
 - Se añadieron pruebas para parseo/validación de `inmutables`, prioridad del veredicto, integración limpia, conflictos y ausencia de mutaciones en el destino.
-- **Estado de validación:** CI run [#370](https://github.com/martinezmarcos93/orquestador-opencode/actions/runs/39078076954) aprobó 158 tests en la punta que incluía los cambios de código; las actualizaciones de documentación posteriores no alteran el código. La integración con un worker real sigue pendiente.
+- **Estado de validación:** CI run [#370](https://github.com/martinezmarcos93/orquestador-multimotor/actions/runs/39078076954) aprobó 158 tests en la punta que incluía los cambios de código; las actualizaciones de documentación posteriores no alteran el código. La integración con un worker real sigue pendiente.
 
 ### Estado actual y próximas unidades, en orden
 
