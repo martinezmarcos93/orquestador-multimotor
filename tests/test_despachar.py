@@ -91,6 +91,16 @@ class TestParseo(unittest.TestCase):
             with mock.patch.dict(os.environ, {"MMAC_PROYECTOS": tmp}), self.assertRaisesRegex(ValueError, "nivel A"):
                 d.parsear_encargo(ENCARGO.replace('proyecto = "', 'proyecto = "demo-secreta" #', 1))
 
+    def test_nivel_a_con_excepcion_fechada_pasa(self):
+        texto = ENCARGO.replace('proyecto = "', 'excepcion_nivel_a = "2026-10-23: clon sin datos, tests"\nproyecto = "hanna" #', 1)
+        with self.assertLogs(level="WARNING"):
+            self.assertEqual(d.parsear_encargo(texto)["proyecto"], "hanna")
+
+    def test_nivel_a_con_excepcion_sin_fecha_falla(self):
+        texto = ENCARGO.replace('proyecto = "', 'excepcion_nivel_a = "sí"\nproyecto = "hanna" #', 1)
+        with self.assertRaisesRegex(ValueError, "nivel A"):
+            d.parsear_encargo(texto)
+
     def test_proyecto_comun_pasa(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"MMAC_PROYECTOS": tmp}):
             d.parsear_encargo(ENCARGO)

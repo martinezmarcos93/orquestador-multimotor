@@ -102,7 +102,11 @@ def parsear_encargo(texto: str) -> dict:
             raise ValueError(f"'{campo}' debe ser una cadena con formato válido: {cfg[campo]!r}")
     motivo = motivo_nivel_a(cfg)
     if motivo:
-        raise ValueError(f"encargo rechazado: nivel A no se delega ({motivo})")
+        excepcion = cfg.get("excepcion_nivel_a")
+        if not (isinstance(excepcion, str) and re.search(r"\d{4}-\d{2}-\d{2}", excepcion)):
+            raise ValueError(f"encargo rechazado: nivel A no se delega ({motivo}). Solo con "
+                             "autorización expresa de Marcos: excepcion_nivel_a = \"AAAA-MM-DD: motivo\"")
+        logging.getLogger(__name__).warning("nivel A con excepción autorizada (%s): %s", motivo, excepcion)
     mut = cfg.get("mutacion")
     if mut is not None:
         if not isinstance(mut, dict):
