@@ -1,8 +1,11 @@
+import os
+import re
 import sys
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import despachar as d
@@ -71,6 +74,27 @@ class TestCommitIgnorados(unittest.TestCase):
 
 
 class TestParseo(unittest.TestCase):
+    def test_rechaza_proyectos_nivel_a_por_nombre(self):
+        for nombre in ("hanna", "nebula-os", "psyche-simulacra", "set-contable", "cerebro-gemelo-marcos"):
+            with self.subTest(nombre=nombre), self.assertRaisesRegex(ValueError, "nivel A"):
+                d.parsear_encargo(ENCARGO.replace('proyecto = "', f'proyecto = "{nombre}" #', 1))
+
+    def test_rechaza_repo_en_zona_contable(self):
+        with self.assertRaisesRegex(ValueError, "nivel A"):
+            d.parsear_encargo(re.sub(r'repo = "[^"]*"', 'repo = "/x/mmac-dev-lab/20-contable/algo"', ENCARGO, count=1))
+
+    def test_rechaza_por_ficha_con_nivel_a(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fichas = Path(tmp) / "_proyectos"
+            fichas.mkdir()
+            (fichas / "demo-secreta.md").write_text("# Demo\n- Calibre: alto\n- Nivel: A\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"MMAC_PROYECTOS": tmp}), self.assertRaisesRegex(ValueError, "nivel A"):
+                d.parsear_encargo(ENCARGO.replace('proyecto = "', 'proyecto = "demo-secreta" #', 1))
+
+    def test_proyecto_comun_pasa(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"MMAC_PROYECTOS": tmp}):
+            d.parsear_encargo(ENCARGO)
+
     def test_parsea_y_aplica_defaults(self):
         cfg = d.parsear_encargo(ENCARGO)
         self.assertEqual(cfg["base"], "main")

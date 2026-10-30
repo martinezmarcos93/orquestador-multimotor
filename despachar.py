@@ -43,6 +43,37 @@ logger = logging.getLogger("despachar")
 RAIZ = Path(__file__).resolve().parent
 RUNS = RAIZ / "runs"
 SRC = Path.home() / "src"
+
+# Compuerta de calibre (calibre-y-delegacion.md): los proyectos de nivel A nunca se
+# delegan. Se decide por código, no por la instrucción de la skill, para que no
+# dependa del cansancio de quien redacta el encargo.
+PROYECTOS_NIVEL_A = {"nebula-os", "hanna", "psyche-simulacra", "cerebro-artificial",
+                     "cerebro-gemelo-marcos", "software-contable-integrador",
+                     "proyecto-facturacion", "set-contable"}
+ZONAS_NIVEL_A = ("/20-contable/", "/nebula-os", "/hanna", "/psyche-simulacra", "/cerebro-")
+RAIZ_MMAC = "/media/marcos/A68072A880727F1D/01-Marcos/00-Programacion/mmac-dev-lab"
+
+
+def motivo_nivel_a(cfg: dict) -> str | None:
+    """Devuelve por qué el encargo toca un proyecto de nivel A, o None."""
+    nombre = cfg["proyecto"].lower()
+    if nombre in PROYECTOS_NIVEL_A or any(nombre.startswith(n + "-") for n in PROYECTOS_NIVEL_A):
+        return f"'{cfg['proyecto']}' está en la lista de proyectos de nivel A"
+    repo = str(cfg.get("repo", "")).replace("\\", "/").lower() + "/"
+    for zona in ZONAS_NIVEL_A:
+        if zona in repo:
+            return f"el repo está en una zona de nivel A ({zona.strip('/')})"
+    ficha = Path(os.environ.get("MMAC_PROYECTOS", RAIZ_MMAC)) / "_proyectos" / f"{cfg['proyecto']}.md"
+    try:
+        texto = ficha.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        logging.getLogger(__name__).warning("no pude leer la ficha %s: %s", ficha, exc)
+        return None
+    if re.search(r"^\W*Nivel:\W*A\b", texto, re.M | re.I):
+        return f"la ficha {ficha.name} dice Nivel: A"
+    return None
 MAX_RONDAS = 2
 RESULTADOS_NO_CUENTAN_PARA_TOPE = {
     "error_opencode", "error_codex", "error_antigravity", "timeout",
@@ -69,6 +100,9 @@ def parsear_encargo(texto: str) -> dict:
     for campo in ("proyecto", "tema", "id", "agente"):
         if not isinstance(cfg[campo], str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", cfg[campo]):
             raise ValueError(f"'{campo}' debe ser una cadena con formato válido: {cfg[campo]!r}")
+    motivo = motivo_nivel_a(cfg)
+    if motivo:
+        raise ValueError(f"encargo rechazado: nivel A no se delega ({motivo})")
     mut = cfg.get("mutacion")
     if mut is not None:
         if not isinstance(mut, dict):
