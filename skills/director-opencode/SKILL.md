@@ -32,13 +32,16 @@ Reglas de calibre y de obediencia: `delegacion-opencode` y `_metodologias/claude
    ```
    El oráculo corre dentro del worktree, antes y después. Por defecto, el despachador **no** enlaza `.venv` ni `node_modules` del repositorio original; `permitir_entornos_compartidos = true` habilita esos enlaces de forma explícita y reduce el aislamiento. Usá rutas **relativas**. Si el encargo menciona la ruta del repo original, el despachador la reescribe por la del worktree cuando corresponde. **Un worktree no es un sandbox de seguridad**: no garantiza por sí solo que el proceso no pueda leer archivos externos, heredar variables sensibles o acceder a la red. No delegues secretos ni datos de terceros a modelos gratuitos; las tareas sensibles requieren controles de sistema operativo verificados.
 3. **Lanzá** en segundo plano: `python3 @@ORQUESTADOR@@/despachar.py <encargo>` con `run_in_background`. Al terminar te reactivás solo: no hagas polling. `--dry-run` prepara el worktree sin gastar cuota.
-4. **Leé en orden de costo:** JSON de `resultado` → `runs/<proyecto>-<id>/ronda-N/estado.json` → `REPORTE.md` → `git diff --stat` → diff completo. No confíes en el "listo": corré el oráculo vos.
+4. **Primero comprobá que los entregables existan en disco** (`estado.json`, `REPORTE.md`, commits en la rama). Si falta alguno, la ronda **falló**, por más convincente que sea el texto del trabajador: un modelo puede devolver una respuesta fluida sin haber escrito nada. Mirá el archivo, no la respuesta.
+   Después **leé en orden de costo:** JSON de `resultado` → `runs/<proyecto>-<id>/ronda-N/estado.json` → `REPORTE.md` (sección Decisiones incluida) → `git diff --stat` → diff completo. No confíes en el "listo": corré el oráculo vos.
 5. **Decidí** según `resultado`:
    - `pasa`: revisá el diff y proponele a Marcos integrar. El merge a main es suyo. **Si son tests, hacé prueba de mutación** (ver abajo) antes de dar por buena la calidad.
    - `falla_oraculo`, `sin_cambios`, `trabajo_sin_commitear` (a veces es menor: documentos sueltos; commitealos vos): orden nueva (mismo `id`, misma `tema`, reutiliza el worktree) con el **feedback concreto** en el cuerpo del encargo. Cada `id` admite 2 rondas.
    - `fuera_de_alcance`, `dependencia_nueva`, `posible_secreto`: no leas el diff; descartá la rama o devolvela con la regla violada.
    - `timeout`, `error_opencode`: mirá `opencode.err`; probablemente cuota o proxy (`systemctl --user status litellm-opencode`).
-   - `tope_rondas`: lo tomás vos.
+   - `tope_rondas`: **una escalada antes de tomarlo vos.** Si la tarea no es sensible, emití un encargo nuevo (`id` nuevo) con otro motor (`motor = "codex"`) y este encuadre en el cuerpo: «Un trabajador anterior lo intentó N veces sin éxito; ahora es tuyo. Leé su REPORTE.md para ver qué probó». Un bucle que sobrevive a dos rondas suele significar que el trabajador no ve su propio error: ojos nuevos y más capacidad de una vez. Si esa escalada también falla, lo tomás vos.
+   - **Diff demasiado grande** (más de ~400 líneas cambiadas, o tests y código mezclados sin necesidad): no se revisa. Devolvelo para partirlo en tareas más chicas; un diff grande no es revisable en lote.
+   - **Hallazgos menores** (estilo, nombres, mejoras opcionales): no abren otra ronda. Anotalos en la bitácora como `menor (diferido)` y decidí al final si alguno bloquea la integración.
 6. **Bitácora:** anotá qué se delegó, qué se integró y qué se rechazó, con el motivo.
 
 ## Opciones del despachador
@@ -49,6 +52,7 @@ Reglas de calibre y de obediencia: `delegacion-opencode` y `_metodologias/claude
 - `--visor` (o `ORQUESTADOR_VISOR=1`): un panel por corrida en una pestaña `orquestador` de Herdr, solo si Claude corre dentro de Herdr. Nunca roba el foco ni toca paneles ajenos; cerrá la pestaña al terminar si no la querés.
 
 ## Reglas
+- **Nivel A lo rechaza el despachador por código** (por nombre, por zona del repo o por `Nivel: A` en la ficha). La única excepción es una autorización expresa de Marcos, escrita en el bloque de configuración: `excepcion_nivel_a = "AAAA-MM-DD: motivo"`, con un clon sin datos. No la escribas sin que Marcos la haya dado en esta conversación.
 - Paralelismo máximo 2-3 trabajadores (comparten cuota gratuita). Un worktree por tema.
 - Una tanda = un tema. Las tareas ambiguas las resolvés vos antes de delegar.
 - Nada con secretos ni datos de terceros sale a modelos gratuitos.
