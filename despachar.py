@@ -51,7 +51,8 @@ PROYECTOS_NIVEL_A = {"nebula-os", "hanna", "psyche-simulacra", "cerebro-artifici
                      "cerebro-gemelo-marcos", "software-contable-integrador",
                      "proyecto-facturacion", "set-contable"}
 ZONAS_NIVEL_A = ("/20-contable/", "/nebula-os", "/hanna", "/psyche-simulacra", "/cerebro-")
-RAIZ_MMAC = "/media/marcos/A68072A880727F1D/01-Marcos/00-Programacion/mmac-dev-lab"
+# Raíz del depósito de proyectos: MMAC_PROYECTOS, o dos niveles arriba de este repo (<raíz>/50-ia/<repo>).
+RAIZ_MMAC = str(RAIZ.parent.parent)
 
 
 def motivo_nivel_a(cfg: dict) -> str | None:
