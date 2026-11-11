@@ -81,7 +81,7 @@ class TestParseo(unittest.TestCase):
 
     def test_rechaza_repo_en_zona_contable(self):
         with self.assertRaisesRegex(ValueError, "nivel A"):
-            d.parsear_encargo(re.sub(r'repo = "[^"]*"', 'repo = "/x/mmac-dev-lab/20-contable/algo"', ENCARGO, count=1))
+            d.parsear_encargo(re.sub(r'repo = "[^"]*"', 'repo = "/x/mmac-dev-lab/20-mmac/algo"', ENCARGO, count=1))
 
     def test_rechaza_por_ficha_con_nivel_a(self):
         with tempfile.TemporaryDirectory() as tmp:

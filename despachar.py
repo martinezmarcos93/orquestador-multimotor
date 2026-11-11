@@ -51,7 +51,7 @@ PROYECTOS_NIVEL_A = {"nebula-os", "hanna", "psyche-simulacra", "cerebro-artifici
                      "cerebro-gemelo-marcos", "software-contable-integrador",
                      "proyecto-facturacion", "set-contable", "mmac-gestion",
                      "mmac-gestion-contable"}
-ZONAS_NIVEL_A = ("/20-contable/", "/nebula-os", "/hanna", "/psyche-simulacra", "/cerebro-")
+ZONAS_NIVEL_A = ("/20-mmac/", "/nebula-os", "/hanna", "/psyche-simulacra", "/cerebro-")
 # Raíz del depósito de proyectos: MMAC_PROYECTOS, o dos niveles arriba de este repo (<raíz>/50-ia/<repo>).
 RAIZ_MMAC = str(RAIZ.parent.parent)
 
